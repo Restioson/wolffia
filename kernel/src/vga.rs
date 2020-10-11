@@ -64,6 +64,7 @@ macro_rules! colour {
 }
 
 /// Writes formatted string to stdout, for print macro use
+#[allow(dead_code)]
 pub fn stdout_print(args: fmt::Arguments) {
     VGA_WRITER.lock().write_fmt(args).unwrap();
 }

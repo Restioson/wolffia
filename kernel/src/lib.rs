@@ -1,4 +1,4 @@
-#![feature(asm, lang_items, allocator_api, alloc_error_handler, panic_info_message)]
+#![feature(asm, lang_items, allocator_api, alloc_error_handler, panic_info_message, abi_x86_interrupt)]
 #![no_std]
 
 #[macro_use]
@@ -21,10 +21,14 @@ mod util;
 mod memory;
 mod gdt;
 mod acpi_handler;
+mod interrupts;
+mod pit;
+mod userspace;
 
 #[global_allocator]
 pub static HEAP: Heap = Heap::new();
 
+#[allow(unused_macros)]
 macro_rules! print {
     ($($arg:tt)*) => ({
         $crate::vga::stdout_print(format_args!($($arg)*));
@@ -32,6 +36,7 @@ macro_rules! print {
     });
 }
 
+#[allow(unused_macros)]
 macro_rules! println {
     ($fmt:expr) => (print!(concat!($fmt, "\n")));
     ($fmt:expr, $($arg:tt)*) => (print!(concat!($fmt, "\n"), $($arg)*));
@@ -50,9 +55,17 @@ pub extern fn kmain(mb_info_addr: u64, guard_page_addr: u64) -> ! {
     log::init();
     memory::init_memory(mb_info_addr, guard_page_addr);
     gdt::init();
+
+    interrupts::init();
+    interrupts::enable();
+    info!("interrupts: ready");
+
+    pit::CONTROLLER.lock().initialize();
+    info!("pit: ready");
+
     let _acpi = acpi_handler::acpi_init();
 
-    halt()
+    crate::userspace::usermode_begin()
 }
 
 fn halt() -> ! {

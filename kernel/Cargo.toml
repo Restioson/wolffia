@@ -23,6 +23,7 @@ bit_field = "0.10.1"
 bitflags = "1.2.1"
 log = "0.4.11"
 acpi = "2.0.0"
+ccl = { version = "1.2", features = ["no_std"], default-features = false } # no std machine broke
 array-init = "0.1.1"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 friendly = { git = "https://github.com/Restioson/friendly" }

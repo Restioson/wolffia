@@ -3,7 +3,7 @@ use crate::memory::physical_mapping::{self, PhysicalMapping};
 
 pub fn acpi_init() -> Result<AcpiTables<WolffiaAcpiHandler>, AcpiError> {
     info!("acpi: initializing");
-    let mut handler = WolffiaAcpiHandler;
+    let handler = WolffiaAcpiHandler;
     // We're BIOS. We'd have crashed by now if we weren't.
     let search_result = unsafe { AcpiTables::search_for_rsdp_bios(handler) };
 
