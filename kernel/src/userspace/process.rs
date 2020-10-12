@@ -1,6 +1,4 @@
-use core::ptr;
 use core::sync::atomic::{Ordering, AtomicU64};
-use crate::gdt::GDT;
 use crate::memory::paging::*;
 use ccl::dhashmap::DHashMap;
 
@@ -12,7 +10,7 @@ lazy_static::lazy_static! {
 
 pub static NEXT_PID: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
 pub struct ProcessId(u64);
 
 impl ProcessId {
@@ -28,7 +26,7 @@ impl ProcessId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Process {
     pub page_tables: InactivePageMap,
     stack_ptr: usize,
@@ -48,14 +46,13 @@ impl Process {
         };
 
         let pid = process::ProcessId::next();
-        let page_tables = process.page_tables.clone();
         process::PROCESSES.insert(pid, process);
 
         pid
     }
 
     pub fn run(&mut self) -> ! {
-        ACTIVE_PAGE_TABLES.lock().switch(&self.page_tables);
+        ACTIVE_PAGE_TABLES.lock().switch(self.page_tables.clone());
 
         if self.new {
             unsafe { self.setup(); }
@@ -81,7 +78,5 @@ impl Process {
             InvalidateTlb::NoInvalidate,
             ZeroPage::Zero,
         );
-
-        let stack_size = INITIAL_STACK_SIZE_PAGES * 0x1000;
     }
 }

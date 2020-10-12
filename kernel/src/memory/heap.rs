@@ -74,11 +74,12 @@ impl Heap {
             );
 
             for page in 0..pages_to_map as u64 {
-                let mut table = PAGE_TABLES.lock();
+                let mut table = ACTIVE_PAGE_TABLES.lock();
                 table.map(
                     Page::containing_address(heap_tree_start + (page * 4096), PageSize::Kib4),
                     EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
                     InvalidateTlb::Invalidate,
+                    ZeroPage::NoZero,
                 );
             }
 
@@ -126,7 +127,7 @@ impl Heap {
         // Map pages that must be mapped
         for page in 0..util::round_up_divide(1u64 << (order + BASE_ORDER), 4096) as u64 {
             let page_addr = ptr as u64 + (page * 4096);
-            PAGE_TABLES.lock().map_to(
+            ACTIVE_PAGE_TABLES.lock().map_to(
                 Page::containing_address(page_addr, PageSize::Kib4),
                 PhysAddr::new((physical_begin_frame + page) * 4096),
                 EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
@@ -171,7 +172,7 @@ impl Heap {
         for page in 0..util::round_up_divide(1u64 << (order + BASE_ORDER), 4096) as u64 {
             let page_addr = global_ptr as u64 + (page * 4096);
 
-            PAGE_TABLES.lock().unmap(
+            ACTIVE_PAGE_TABLES.lock().unmap(
                 Page::containing_address(page_addr, PageSize::Kib4),
                 FreeMemory::NoFree,
                 InvalidateTlb::NoInvalidate,
@@ -197,7 +198,7 @@ unsafe impl GlobalAlloc for Heap {
 
         // Map pages that have yet to be mapped
         for page in 0..util::round_up_divide(1u64 << (order + BASE_ORDER - 1), 4096) as u64 {
-            let mut page_tables = PAGE_TABLES.lock();
+            let mut page_tables = ACTIVE_PAGE_TABLES.lock();
 
             let page_addr = ptr as u64 + (page * 4096);
 
@@ -211,6 +212,7 @@ unsafe impl GlobalAlloc for Heap {
                     Page::containing_address(page_addr, PageSize::Kib4),
                     EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
                     InvalidateTlb::NoInvalidate,
+                    ZeroPage::NoZero,
                 );
             }
         }
@@ -253,7 +255,7 @@ unsafe impl GlobalAlloc for Heap {
             if order_free == page_order + 1 {
                 let global_ptr = page_base_ptr + HEAP_START;
 
-                PAGE_TABLES.lock().unmap(
+                ACTIVE_PAGE_TABLES.lock().unmap(
                     Page::containing_address(global_ptr, PageSize::Kib4),
                     FreeMemory::Free,
                     InvalidateTlb::Invalidate,
@@ -264,7 +266,7 @@ unsafe impl GlobalAlloc for Heap {
            for page in 0..util::round_up_divide(1u64 << (order + BASE_ORDER - 1), 4096) as u64 {
                let page_addr = global_ptr as u64 + (page * 4096);
 
-               PAGE_TABLES.lock().unmap(
+               ACTIVE_PAGE_TABLES.lock().unmap(
                    Page::containing_address(page_addr, PageSize::Kib4),
                    FreeMemory::Free,
                    InvalidateTlb::Invalidate,

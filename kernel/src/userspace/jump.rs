@@ -1,16 +1,10 @@
-use crate::gdt::{GDT, TSS};
-use x86_64::VirtAddr;
+use crate::gdt::{GDT};
 
 /// Jumps to usermode.
 #[naked]
 pub unsafe fn jump_usermode(stack_ptr: usize, instruction_ptr: usize) -> ! {
-    let ds = GDT.selectors.user_ds.0;
-    let cs = GDT.selectors.user_cs.0;
-
-    let kernel_rsp: u64;
-    asm!("mov {}, rsp", out(reg) kernel_rsp);
-
-    TSS.wait().unwrap().lock().tss.get_mut().privilege_stack_table[0] = VirtAddr::new(kernel_rsp);
+    let _ds = GDT.selectors.user_ds.0;
+    let _cs = GDT.selectors.user_cs.0; // TODO
 
     asm!(
         "

@@ -7,30 +7,46 @@ pub const IRQ_IST_INDEX: u16 = 2;
 
 pub static TSS: Once<TaskStateSegment> = Once::new();
 
-use x86_64::structures::gdt::{GlobalDescriptorTable, Descriptor, SegmentSelector};
+use x86_64::structures::gdt::{*, DescriptorFlags as Flags};
 
 lazy_static::lazy_static! {
-    static ref GDT: Gdt = {
+    pub static ref GDT: Gdt = {
         let mut gdt = GlobalDescriptorTable::new();
-        let code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
-        let data_selector = gdt.add_entry(Descriptor::UserSegment((1<<44) | (1<<47) | (1<<41) | (1<<53)));
-        let tss_selector = gdt.add_entry(Descriptor::tss_segment(TSS.wait().unwrap()));
+        let kernel_cs = gdt.add_entry(Descriptor::kernel_code_segment());
+        let kernel_ds = gdt.add_entry(Descriptor::UserSegment(
+            (Flags::USER_SEGMENT | Flags::PRESENT).bits() | (1 << 41),
+        ));
+
+        let tss = gdt.add_entry(
+            Descriptor::tss_segment(&*TSS.wait().unwrap()) // TODO, 8193
+        );
+
+        let user_cs = gdt.add_entry(Descriptor::UserSegment(
+            (Flags::USER_SEGMENT | Flags::PRESENT | Flags::EXECUTABLE | Flags::LONG_MODE).bits()
+            | (3 << 45) // ring 3
+        ));
+        let user_ds = gdt.add_entry(Descriptor::UserSegment( //RW bit & ring3
+            (Flags::USER_SEGMENT | Flags::PRESENT).bits() | (1 << 41) | (3 << 45),
+        ));
+
         Gdt {
             table: gdt,
-            selectors: Selectors { code_selector, tss_selector, data_selector },
+            selectors: Selectors { kernel_cs, kernel_ds, user_cs, user_ds, tss },
         }
     };
 }
 
-struct Gdt {
+pub struct Gdt {
     table: GlobalDescriptorTable,
-    selectors: Selectors,
+    pub selectors: Selectors,
 }
 
-struct Selectors {
-    code_selector: SegmentSelector,
-    tss_selector: SegmentSelector,
-    data_selector: SegmentSelector,
+pub struct Selectors {
+    pub kernel_cs: SegmentSelector,
+    pub kernel_ds: SegmentSelector,
+    pub user_cs: SegmentSelector,
+    pub user_ds: SegmentSelector,
+    pub tss: SegmentSelector,
 }
 
 pub fn init() {
@@ -42,15 +58,15 @@ pub fn init() {
     GDT.table.load();
 
     unsafe {
-        set_cs(GDT.selectors.code_selector);
-        load_tss(GDT.selectors.tss_selector);
+        set_cs(GDT.selectors.kernel_cs);
+        load_tss(GDT.selectors.tss);
 
         // Reload selector registers
-        load_ss(GDT.selectors.data_selector);
-        load_ds(GDT.selectors.data_selector);
-        load_es(GDT.selectors.data_selector);
-        load_fs(GDT.selectors.data_selector);
-        load_gs(GDT.selectors.data_selector);
+        load_ss(GDT.selectors.kernel_ds);
+        load_ds(GDT.selectors.kernel_ds);
+        load_es(GDT.selectors.kernel_ds);
+        load_fs(GDT.selectors.kernel_ds);
+        load_gs(GDT.selectors.kernel_ds);
     }
 
     debug!("gdt: initialised");

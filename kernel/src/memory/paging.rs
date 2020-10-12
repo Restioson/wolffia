@@ -6,14 +6,15 @@ mod page_map;
 pub use self::page_map::*;
 
 use core::marker::PhantomData;
-use core::ops::{Add, Index, IndexMut};
+use core::ops::{Add, Index, IndexMut, Sub};
 use spin::Mutex;
 use super::physical_allocator::PHYSICAL_ALLOCATOR;
 use x86_64::instructions::tlb;
 use x86_64::PhysAddr;
+use x86_64::registers::control::Cr3;
 
 const PAGE_TABLE_ENTRIES: u64 = 512;
-pub static PAGE_TABLES: Mutex<ActivePageMap> = Mutex::new(unsafe { ActivePageMap::new() });
+pub static ACTIVE_PAGE_TABLES: Mutex<ActivePageMap> = Mutex::new(unsafe { ActivePageMap::new() });
 
 /// The size of a page. Distinct from `memory::PageSize` in that it only enumerates page sizes
 /// supported by the paging module at this time.
@@ -81,6 +82,17 @@ impl Add<usize> for Page {
     fn add(self, other: usize) -> Page {
         Page {
             number: self.number + other,
+            size: self.size
+        }
+    }
+}
+
+impl Sub<usize> for Page {
+    type Output = Page;
+
+    fn sub(self, other: usize) -> Page {
+        Page {
+            number: self.number - other,
             size: self.size
         }
     }
@@ -254,11 +266,10 @@ impl<L: TableLevel> PageTable<L> {
             if self.entries[index].flags().contains(self::EntryFlags::HUGE_PAGE){
                 assert!(L::CAN_BE_HUGE, "Page has huge bit but cannot be huge!");
             } else {
-                let ptr = PHYSICAL_ALLOCATOR.allocate(0).expect("No physical frames available!");
-                let frame = PhysAddr::new(ptr as u64);
+                let frame = PHYSICAL_ALLOCATOR.allocate(0).expect("No physical frames available!");
 
                 self.entries[index].set(
-                    frame,
+                    frame.start_address(),
                     self::EntryFlags::PRESENT |
                         self::EntryFlags::WRITABLE
                 );
@@ -282,4 +293,37 @@ impl<L: TableLevel> IndexMut<usize> for PageTable<L> {
     fn index_mut(&mut self, index: usize) -> &mut PageTableEntry {
         &mut self.entries[index]
     }
+}
+
+
+pub fn new_process_page_tables() -> InactivePageMap {
+    let mut temporary_page = TemporaryPage::new();
+
+    // This must be duplicated to avoid double locks. This is safe though -- in this context!
+    let mut active_table = unsafe { ActivePageMap::new() };
+
+    let frame = PHYSICAL_ALLOCATOR.allocate(0).expect("no more frames");
+    let new_table = InactivePageMap::new(
+        frame,
+        Cr3::read().1,
+        &mut active_table,
+        &mut temporary_page
+    );
+
+    // Copy kernel pml4 entry
+    let kernel_pml4_entry = active_table.p4()[511];
+    let table = unsafe {
+        temporary_page.map_table_frame(frame.start_address(), &mut active_table)
+    };
+
+    table[511] = kernel_pml4_entry;
+
+    unsafe {
+        temporary_page.unmap(&mut active_table);
+    }
+
+    // Drop this lock so that the RAII guarded temporary page can be destroyed
+    drop(active_table);
+
+    new_table
 }

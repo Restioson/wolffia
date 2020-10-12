@@ -7,6 +7,8 @@ use super::bootstrap_heap::{BootstrapHeapBox, BOOTSTRAP_HEAP};
 use friendly::{Tree, Block};
 use alloc::vec::Vec;
 use core::convert::TryInto;
+use x86_64::structures::paging::PhysFrame;
+use x86_64::PhysAddr;
 
 /// Number of orders.
 const LEVEL_COUNT: u8 = 19;
@@ -110,7 +112,7 @@ impl<'a> PhysicalAllocator<'a> {
     }
 
     /// Allocate a frame of order `order`. Panics if not initialized. Does __not__ zero the memory.
-    pub fn allocate(&self, order: u8) -> Option<u64> {
+    pub fn allocate(&self, order: u8) -> Option<PhysFrame> {
         #[derive(Eq, PartialEq, Copy, Clone, Debug)]
         enum TryState {
             Tried,
@@ -136,9 +138,10 @@ impl<'a> PhysicalAllocator<'a> {
                 if let Some(ref mut tree) = tree.as_mut() {
                     // Try to allocate something on the tree
                     match tree.allocate(order) {
-                        Some(address) => return Some(
-                            address as u64 + (index * (1 << PhysicalTree::max_order() + BASE_ORDER)) as u64
-                        ),
+                        Some(address) => {
+                            let addr = address + (index * (1 << PhysicalTree::max_order() + BASE_ORDER));
+                            return Some(PhysFrame::containing_address(PhysAddr::new(addr as u64)));
+                        },
                         None => tried[index] = TryState::Tried, // Tree empty for alloc of this size
                     }
                 } else {

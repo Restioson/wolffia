@@ -122,18 +122,20 @@ fn print_memory_info(memory_map: &MemoryMapTag) {
 }
 
 unsafe fn setup_ist(begin: Page) {
-    let mut allocator = StackAllocator::new(begin, 7, IST_STACK_SIZE_PAGES);
+    let mut allocator = StackAllocator::new(begin, 8, IST_STACK_SIZE_PAGES);
 
-    let pages = IST_STACK_SIZE_PAGES * 7;
+    // 7 for IST, 1 for syscalls
+    let pages = IST_STACK_SIZE_PAGES * 8;
 
     for page in 0..pages {
         if page % IST_STACK_SIZE_PAGES == 0 {
             // Page is guard page: do not map
         } else {
-            PAGE_TABLES.lock().map(
+            ACTIVE_PAGE_TABLES.lock().map(
                 Page::containing_address(begin.start_address().unwrap() + (page * 4096), PageSize::Kib4),
                 EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
                 InvalidateTlb::Invalidate,
+                ZeroPage::NoZero,
             );
         }
     }
@@ -141,12 +143,17 @@ unsafe fn setup_ist(begin: Page) {
     gdt::TSS.call_once(|| {
         let mut tss = TaskStateSegment::new();
 
-        for i in 0..7 { // Packed struct; cannot safely borrow fields
+        let mut alloc = || {
             let stack_start = allocator.alloc().unwrap();
             let stack_end = stack_start as u64 + (IST_STACK_SIZE_PAGES * 4096) as u64;
+            stack_end
+        };
 
-            tss.interrupt_stack_table[i] = x86_64::VirtAddr::new(stack_end);
+        for i in 0..7 { // Packed struct; cannot safely borrow fields
+            tss.interrupt_stack_table[i] = x86_64::VirtAddr::new(alloc());
         }
+
+        tss.privilege_stack_table[0] = x86_64::VirtAddr::new(alloc());
 
         tss
     });
@@ -176,7 +183,7 @@ unsafe fn setup_bootstrap_heap(
         BootstrapHeap::space_taken() / 4096,
     );
 
-    PAGE_TABLES.lock().map_page_range(
+    ACTIVE_PAGE_TABLES.lock().map_page_range(
         mapping,
         InvalidateTlb::NoInvalidate,
         EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
@@ -258,10 +265,10 @@ unsafe fn setup_guard_page(addr: u64) {
     let page = Page::containing_address(addr, PageSize::Kib4);
 
     // Check it is a 4kib page
-    let size = PAGE_TABLES.lock().walk_page_table(page).expect("Guard page must be mapped!").1;
+    let size = ACTIVE_PAGE_TABLES.lock().walk_page_table(page).expect("Guard page must be mapped!").1;
     assert_eq!(size, PageSize::Kib4, "Guard page must be on a 4kib page!");
 
-    PAGE_TABLES.lock().unmap(page, FreeMemory::NoFree, InvalidateTlb::Invalidate);
+    ACTIVE_PAGE_TABLES.lock().unmap(page, FreeMemory::NoFree, InvalidateTlb::Invalidate);
 }
 
 fn kernel_area(mb_info: &BootInformation) -> RangeInclusive<u64> {

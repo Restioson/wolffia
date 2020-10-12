@@ -28,10 +28,6 @@ pub unsafe fn map_physical_region<T>(
     }
 }
 
-pub unsafe fn map_physical_type<T>(physical_address: u64, mutable: bool) -> PhysicalMapping<T> {
-    map_physical_region(physical_address, mem::size_of::<T>() as u64, mutable)
-}
-
 pub struct PhysicalMapping<T> {
     physical_start: u64,
     virtual_start: NonNull<T>,

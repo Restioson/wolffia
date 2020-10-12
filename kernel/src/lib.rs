@@ -1,4 +1,4 @@
-#![feature(asm, lang_items, allocator_api, alloc_error_handler, panic_info_message, abi_x86_interrupt)]
+#![feature(asm, lang_items, allocator_api, alloc_error_handler, panic_info_message, abi_x86_interrupt, naked_functions)]
 #![no_std]
 
 #[macro_use]
