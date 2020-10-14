@@ -1,8 +1,8 @@
-use core::fmt::{self, Debug, Write};
-use spin::Mutex;
 use crate::memory::KERNEL_MAPPING_BEGIN;
+use core::fmt::{self, Debug, Write};
 use core::ptr::NonNull;
-use core::{ptr, cmp};
+use core::{cmp, ptr};
+use spin::Mutex;
 
 /// Represents colours, based off of VGA's colour set
 #[allow(dead_code)] // dead variants for completeness
@@ -36,7 +36,10 @@ pub struct ColourPair {
 impl ColourPair {
     #[allow(dead_code)] // Completeness
     pub const fn new(foreground: Colour, background: Colour) -> Self {
-        ColourPair { foreground, background }
+        ColourPair {
+            foreground,
+            background,
+        }
     }
 }
 
@@ -44,7 +47,7 @@ impl Default for ColourPair {
     fn default() -> Self {
         ColourPair {
             foreground: Colour::White,
-            background: Colour::Black
+            background: Colour::Black,
         }
     }
 }
@@ -132,10 +135,7 @@ impl VgaWriter {
         self.buffer().set_char(
             point.0,
             RESOLUTION.y - 1 - point.1,
-            VgaChar::new(
-                colour.into(),
-                character as u8
-            )
+            VgaChar::new(colour.into(), character as u8),
         );
     }
 
@@ -210,10 +210,7 @@ impl VgaBuffer {
     }
 
     pub fn clear_row(&mut self, y: usize, colour: Colour) {
-        let blank = VgaChar::new(
-            VgaColour::new(Colour::Black, colour),
-            b' '
-        );
+        let blank = VgaChar::new(VgaColour::new(Colour::Black, colour), b' ');
 
         for x in 0..RESOLUTION.x {
             self.set_char(x, y, blank);

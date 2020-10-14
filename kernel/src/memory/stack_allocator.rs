@@ -26,7 +26,8 @@ impl StackAllocator {
             return None;
         }
 
-        let addr = self.base.start_address().unwrap() + (self.current * (self.stack_size_pages << 12));
+        let addr =
+            self.base.start_address().unwrap() + (self.current * (self.stack_size_pages << 12));
         self.current += 1;
 
         Some(addr as *const u8)

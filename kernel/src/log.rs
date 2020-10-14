@@ -1,5 +1,5 @@
-use log::{self, Log, Record, Level, Metadata};
 use crate::vga::VGA_WRITER;
+use log::{self, Level, Log, Metadata, Record};
 
 static LOGGER: Logger = Logger;
 
@@ -10,8 +10,9 @@ macro_rules! error {
             use alloc::fmt::Write;
             crate::vga::VGA_WRITER.lock().write_str_coloured("[error] ", colour!(Red on Black));
             write!(crate::vga::VGA_WRITER.lock(), "{}\n", format_args!($thing, $($extra)*)).unwrap();
-            crate::serial1_print(format_args!("[error]  "));
+            crate::serial1_print(format_args!("[error] "));
             crate::serial1_print(format_args!($thing, $($extra)*));
+            crate::serial1_print(format_args!("\n"));
         }
     };
 
@@ -29,6 +30,7 @@ macro_rules! warn {
             write!(crate::vga::VGA_WRITER.lock(), "{}\n", format_args!($thing, $($extra)*)).unwrap();
             crate::serial1_print(format_args!("[warn]  "));
             crate::serial1_print(format_args!($thing, $($extra)*));
+            crate::serial1_print(format_args!("\n"));
         }
     };
 
@@ -45,6 +47,7 @@ macro_rules! info {
             write!(crate::vga::VGA_WRITER.lock(), "{}\n", format_args!($thing, $($extra)*)).unwrap();
             crate::serial1_print(format_args!("[info]  "));
             crate::serial1_print(format_args!($thing, $($extra)*));
+            crate::serial1_print(format_args!("\n"));
         }
     };
 
@@ -60,8 +63,9 @@ macro_rules! debug {
             use alloc::fmt::Write;
             crate::vga::VGA_WRITER.lock().write_str_coloured("[debug] ", colour!(Cyan on Black));
             write!(crate::vga::VGA_WRITER.lock(), "{}\n", format_args!($thing, $($extra)*)).unwrap();
-            crate::serial1_print(format_args!("[debug]  "));
+            crate::serial1_print(format_args!("[debug] "));
             crate::serial1_print(format_args!($thing, $($extra)*));
+            crate::serial1_print(format_args!("\n"));
         }
     };
 
@@ -77,8 +81,9 @@ macro_rules! trace {
             use alloc::fmt::Write;
             crate::vga::VGA_WRITER.lock().write_str_coloured("[trace] ", colour!(White on Black));
             write!(crate::vga::VGA_WRITER.lock(), "{}\n", format_args!($thing, $($extra)*)).unwrap();
-            crate::serial1_print(format_args!("[trace]  "));
+            crate::serial1_print(format_args!("[trace] "));
             crate::serial1_print(format_args!($thing, $($extra)*));
+            crate::serial1_print(format_args!("\n"));
         }
     };
 
@@ -93,10 +98,10 @@ struct Logger;
 #[allow(unreachable_code)]
 const fn log_level() -> Level {
     #[cfg(feature = "trace")]
-        return Level::Trace;
+    return Level::Trace;
 
     #[cfg(feature = "debug")]
-        return Level::Debug;
+    return Level::Debug;
 
     Level::Info
 }
@@ -113,19 +118,20 @@ impl Log for Logger {
             let (label, colour) = match record.level() {
                 Level::Trace => ("[trace] ", colour!(White on Black)),
                 Level::Debug => ("[debug] ", colour!(Cyan on Black)),
-                Level::Info  => ("[info]  ", colour!(LightBlue on Black)),
-                Level::Warn  => ("[warn]  ", colour!(LightRed on Black)),
+                Level::Info => ("[info]  ", colour!(LightBlue on Black)),
+                Level::Warn => ("[warn]  ", colour!(LightRed on Black)),
                 Level::Error => ("[error] ", colour!(Red on Black)),
             };
 
-            crate::vga::VGA_WRITER.lock().write_str_coloured(label, colour);
-
             let message = format!("{}: {}\n", record.target(), record.args());
 
+            crate::vga::VGA_WRITER
+                .lock()
+                .write_str_coloured(label, colour);
             VGA_WRITER.lock().write_str(&message);
 
-            write!(crate::SERIAL_WRITER.lock(), "{}\n", label).unwrap();
-            write!(crate::SERIAL_WRITER.lock(), "{}\n", message).unwrap();
+            write!(crate::SERIAL_WRITER.lock(), "{}", label).unwrap();
+            write!(crate::SERIAL_WRITER.lock(), "{}", message).unwrap();
         }
     }
 

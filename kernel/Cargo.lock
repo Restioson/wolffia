@@ -12,10 +12,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ahash"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8fd72866655d1904d6b0997d0b07ba561047d070fbe29de039031c641b61217"
+
+[[package]]
 name = "array-init"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f30bbe2f5e3d117f55bd8c7a1f9191e4a5deba9f15f595bbea4f670c59c765db"
+
+[[package]]
+name = "atomic_bitfield"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd8406aec7cf333fd4b0c15a8af08c72c49ca9b68ed2d1d89cc65b7c88552c32"
+dependencies = [
+ "bit_field 0.9.0",
+ "cfg-if",
+]
+
+[[package]]
+name = "autocfg"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "bit_field"
@@ -36,38 +58,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 
 [[package]]
-name = "byteorder"
-version = "1.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08c48aae112d48ed9f069b33538ea9e3e90aa263cfa3d1c24309612b1f7472de"
-
-[[package]]
-name = "ccl"
-version = "1.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54601f79d62ec7774e00a1e9db0a83747a36d0918c8d2f55a12fb8b638fb0e19"
-dependencies = [
- "ccl-fxhash",
- "hashbrown",
- "smallvec",
- "spin 0.5.2",
-]
-
-[[package]]
-name = "ccl-fxhash"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eef30ecbc8ff94c836ef0543827b2cd691f86485392256f3e3de674f48722c06"
-dependencies = [
- "byteorder",
- "cfg-if",
-]
-
-[[package]]
 name = "cfg-if"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
+
+[[package]]
+name = "dashmap"
+version = "3.11.10"
+dependencies = [
+ "cfg-if",
+ "hashbrown",
+ "wyhash",
+]
 
 [[package]]
 name = "friendly"
@@ -76,9 +79,13 @@ source = "git+https://github.com/Restioson/friendly#f5762dc76c2b909127c97d608175
 
 [[package]]
 name = "hashbrown"
-version = "0.2.2"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61e4900fa4e80b3d15c78a08ec8a08433246063fa7577e7b2c6426b3b21b1f79"
+checksum = "e91b62f79061a0bc2e046024cb7ba44b08419ed238ecbd9adbd787434b9e8c25"
+dependencies = [
+ "ahash",
+ "autocfg",
+]
 
 [[package]]
 name = "lazy_static"
@@ -99,12 +106,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "maybe-uninit"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
-
-[[package]]
 name = "multiboot2"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -114,21 +115,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_core"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90bde5296fc891b0cef12a6d03ddccc162ce7b2aff54160af9338f8d40df6d19"
+
+[[package]]
 name = "rsdp"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49b26cb0132c85db7152fc291c9680a9240d4ef482287667819dbaec1d665dbd"
 dependencies = [
  "log",
-]
-
-[[package]]
-name = "smallvec"
-version = "0.6.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7b0758c52e15a8b5e3691eae6cc559f08eee9406e548a4477ba4e67770a82b6"
-dependencies = [
- "maybe-uninit",
 ]
 
 [[package]]
@@ -156,7 +154,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "afb00b16a4c8acbfc4eb8cfeda1f9c0507c7e87c6563edce64a236af93acf70c"
 dependencies = [
  "bitflags",
- "x86_64",
+ "x86_64 0.12.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -165,9 +163,10 @@ version = "0.1.0"
 dependencies = [
  "acpi",
  "array-init",
+ "atomic_bitfield",
  "bit_field 0.10.1",
  "bitflags",
- "ccl",
+ "dashmap",
  "friendly",
  "lazy_static",
  "log",
@@ -175,7 +174,23 @@ dependencies = [
  "spin 0.6.0",
  "tinyvec",
  "uart_16550",
- "x86_64",
+ "x86_64 0.12.2",
+]
+
+[[package]]
+name = "wyhash"
+version = "0.4.1"
+source = "git+https://github.com/eldruin/wyhash-rs#c9ba3f61af8dfbb31b0dfa369a077e10851a00a4"
+dependencies = [
+ "rand_core",
+]
+
+[[package]]
+name = "x86_64"
+version = "0.12.2"
+dependencies = [
+ "bit_field 0.9.0",
+ "bitflags",
 ]
 
 [[package]]

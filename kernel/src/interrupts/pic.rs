@@ -23,7 +23,11 @@ struct Pic {
 
 impl Pic {
     const fn new(offset: u8, command_port: Port<u8>, data_port: Port<u8>) -> Self {
-        Pic { offset, command_port, data_port }
+        Pic {
+            offset,
+            command_port,
+            data_port,
+        }
     }
 
     fn initialize(&mut self) {
@@ -84,7 +88,9 @@ impl Pic {
 
     fn read_data(&mut self) -> u8 {
         let value = unsafe { self.data_port.read() };
-        unsafe { IO_WAIT_PORT.lock().write(0x0); }
+        unsafe {
+            IO_WAIT_PORT.lock().write(0x0);
+        }
         value
     }
 }
@@ -98,16 +104,8 @@ pub struct ChainedPics {
 impl ChainedPics {
     pub const fn new() -> Self {
         ChainedPics {
-            master: Pic::new(
-                0x20,
-                Port::new(0x20),
-                Port::new(0x21),
-            ),
-            slave: Pic::new(
-                0x28,
-                Port::new(0xA0),
-                Port::new(0xA1),
-            ),
+            master: Pic::new(0x20, Port::new(0x20), Port::new(0x21)),
+            slave: Pic::new(0x28, Port::new(0xA0), Port::new(0xA1)),
         }
     }
 
@@ -117,7 +115,9 @@ impl ChainedPics {
         let master_mask = self.master.read_data();
         let slave_mask = self.slave.read_data();
 
-        unsafe { IO_WAIT_PORT.lock().write(0x0); }
+        unsafe {
+            IO_WAIT_PORT.lock().write(0x0);
+        }
 
         // Tell both of the PICs to initialise
         self.master.initialize();
@@ -148,7 +148,7 @@ impl ChainedPics {
                     handler();
                     self.master.end_of_interrupt();
                 }
-            },
+            }
             IrqDestination::Slave(_) => {
                 if !self.slave.is_spurious(irq) {
                     handler();
@@ -156,7 +156,7 @@ impl ChainedPics {
                 } else {
                     self.master.end_of_interrupt();
                 }
-            },
+            }
         }
     }
 

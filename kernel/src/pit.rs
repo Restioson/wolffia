@@ -1,9 +1,8 @@
 /// Programmable Interval Timer controller for sleeping and measuring time passage
 /// Note: This is a very low accuracy driver, with a drift of ~1ms every 6 seconds
-
 use crate::interrupts;
-use spin::Mutex;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use spin::Mutex;
 use x86_64::instructions::port::Port;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -26,7 +25,9 @@ fn tick() {
 pub fn sleep(ms: usize) {
     let wake_time = COUNTER.load(Ordering::SeqCst) + ms;
     while COUNTER.load(Ordering::SeqCst) < wake_time {
-        unsafe { asm!("hlt"); }
+        unsafe {
+            asm!("hlt");
+        }
     }
 }
 
@@ -60,7 +61,8 @@ impl Controller {
     }
 
     fn configure(&mut self, channel: u8, operating_mode: OperatingMode, access_mode: AccessMode) {
-        let configuration = (channel << 6) | ((access_mode as u8) << 4) | ((operating_mode as u8) << 1);
+        let configuration =
+            (channel << 6) | ((access_mode as u8) << 4) | ((operating_mode as u8) << 1);
         unsafe {
             self.configure_port.write(configuration);
         }

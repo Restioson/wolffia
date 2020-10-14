@@ -1,13 +1,15 @@
 //! A simple bitmap allocator used to allocate memory for the buddy allocator
 
-
-use core::{mem, ptr::{self, NonNull}};
+use crate::memory::physical_allocator::PhysicalTree;
+use bit_field::BitField;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
-use spin::{Once, Mutex};
-use bit_field::BitField;
+use core::{
+    mem,
+    ptr::{self, NonNull},
+};
 use friendly::Block;
-use crate::memory::physical_allocator::PhysicalTree;
+use spin::{Mutex, Once};
 
 pub static BOOTSTRAP_HEAP: BootstrapHeap = BootstrapHeap(Once::new());
 
@@ -16,7 +18,9 @@ pub struct BootstrapHeap(Once<BootstrapAllocator<[Block; PhysicalTree::total_blo
 
 impl BootstrapHeap {
     /// Allocates a zeroed object. Panics if bootstrap heap is not initialized
-    pub unsafe fn allocate(&self) -> Option<BootstrapHeapBox<[Block; PhysicalTree::total_blocks()]>> {
+    pub unsafe fn allocate(
+        &self,
+    ) -> Option<BootstrapHeapBox<[Block; PhysicalTree::total_blocks()]>> {
         self.0.wait().unwrap().allocate()
     }
 
@@ -26,7 +30,8 @@ impl BootstrapHeap {
     ///
     /// Unsafe if address is incorrect (not free memory)
     pub unsafe fn init_unchecked(&self, address: u64) {
-        self.0.call_once(|| BootstrapAllocator::new_unchecked(address));
+        self.0
+            .call_once(|| BootstrapAllocator::new_unchecked(address));
     }
 
     /// Get the start address of the bootstrap heap. Panics if uninitialized
@@ -36,8 +41,8 @@ impl BootstrapHeap {
 
     /// Get the end address of the bootstrap heap. Inclusive. Panics if uninitialized
     pub fn end(&self) -> u64 {
-        self.0.wait().unwrap().start() as u64 +
-            BootstrapAllocator::<[Block; PhysicalTree::total_blocks()]>::space_taken()
+        self.0.wait().unwrap().start() as u64
+            + BootstrapAllocator::<[Block; PhysicalTree::total_blocks()]>::space_taken()
     }
 
     pub const fn space_taken() -> u64 {
@@ -88,10 +93,11 @@ impl<T> BootstrapAllocator<T> {
             if !byte.get_bit(bit) {
                 byte.set_bit(bit, true);
 
-                let ptr = unsafe {
-                    NonNull::new_unchecked(self.start().offset((bit) as isize))
-                };
-                return Some(BootstrapHeapBox { ptr, allocator: self });
+                let ptr = unsafe { NonNull::new_unchecked(self.start().add(bit)) };
+                return Some(BootstrapHeapBox {
+                    ptr,
+                    allocator: self,
+                });
             }
         }
 
@@ -114,7 +120,10 @@ pub struct BootstrapHeapBox<'a, T: 'a> {
 
 impl<'a, T> PartialEq for BootstrapHeapBox<'a, T> {
     fn eq(&self, other: &Self) -> bool {
-        ptr::eq(self.ptr.as_ptr() as *const _, other.ptr.as_ptr() as *const _)
+        ptr::eq(
+            self.ptr.as_ptr() as *const _,
+            other.ptr.as_ptr() as *const _,
+        )
     }
 }
 

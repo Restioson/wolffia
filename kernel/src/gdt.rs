@@ -1,13 +1,10 @@
-use spin::Once;
-use x86_64::structures::tss::TaskStateSegment;
+use crate::tss::TSS;
 
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 pub const PANICKING_EXCEPTION_IST_INDEX: u16 = 1;
 pub const IRQ_IST_INDEX: u16 = 2;
 
-pub static TSS: Once<TaskStateSegment> = Once::new();
-
-use x86_64::structures::gdt::{*, DescriptorFlags as Flags};
+use x86_64::structures::gdt::{DescriptorFlags as Flags, *};
 
 lazy_static::lazy_static! {
     pub static ref GDT: Gdt = {
@@ -18,7 +15,9 @@ lazy_static::lazy_static! {
         ));
 
         let tss = gdt.add_entry(
-            Descriptor::tss_segment(&*TSS.wait().unwrap()) // TODO, 8193
+            unsafe {
+                Descriptor::tss_segment_with_iomap(&TSS.wait().unwrap().tss, 8193)
+            }
         );
 
         let user_cs = gdt.add_entry(Descriptor::UserSegment(
@@ -57,6 +56,7 @@ pub fn init() {
 
     GDT.table.load();
 
+    // SAFETY: all of these values are correct.
     unsafe {
         set_cs(GDT.selectors.kernel_cs);
         load_tss(GDT.selectors.tss);

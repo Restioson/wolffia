@@ -9,6 +9,7 @@ crate-type = ["staticlib"]
 
 [profile.dev]
 panic = "abort"
+opt-level = 3
 
 [profile.release]
 panic = "abort"
@@ -17,13 +18,18 @@ panic = "abort"
 spin = "0.6.0"
 uart_16550 = "0.2.10"
 multiboot2 = "0.9.0"
-x86_64 = "0.12.2"
+x86_64 = { path = "../../x86_64" }
 tinyvec = { version = "1.0.1", features = ["nightly_const_generics"] }
 bit_field = "0.10.1"
+atomic_bitfield = "0.1.0"
 bitflags = "1.2.1"
 log = "0.4.11"
 acpi = "2.0.0"
-ccl = { version = "1.2", features = ["no_std"], default-features = false } # no std machine broke
+dashmap = { path = "../../dashmap", default-features = false, features = ["no_std"] }
 array-init = "0.1.1"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 friendly = { git = "https://github.com/Restioson/friendly" }
+
+[features]
+debug = []
+trace = []

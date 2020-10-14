@@ -1,17 +1,17 @@
 //! Various functions and structures to work with paging, page tables, and page table entries.
 //! Thanks a __lot__ to [Phil Opp's paging blogpost](https://os.phil-opp.com/page-tables/).
 
-pub mod remap;
 mod page_map;
+pub mod remap;
 pub use self::page_map::*;
 
+use super::physical_allocator::PHYSICAL_ALLOCATOR;
 use core::marker::PhantomData;
 use core::ops::{Add, Index, IndexMut, Sub};
 use spin::Mutex;
-use super::physical_allocator::PHYSICAL_ALLOCATOR;
 use x86_64::instructions::tlb;
-use x86_64::PhysAddr;
 use x86_64::registers::control::Cr3;
+use x86_64::PhysAddr;
 
 const PAGE_TABLE_ENTRIES: u64 = 512;
 pub static ACTIVE_PAGE_TABLES: Mutex<ActivePageMap> = Mutex::new(unsafe { ActivePageMap::new() });
@@ -72,7 +72,10 @@ impl Page {
     }
 
     pub fn containing_address(addr: u64, size: PageSize) -> Page {
-        Page { number: (addr / size.bytes()) as usize, size: Some(size) }
+        Page {
+            number: (addr / size.bytes()) as usize,
+            size: Some(size),
+        }
     }
 }
 
@@ -82,7 +85,7 @@ impl Add<usize> for Page {
     fn add(self, other: usize) -> Page {
         Page {
             number: self.number + other,
-            size: self.size
+            size: self.size,
         }
     }
 }
@@ -93,7 +96,7 @@ impl Sub<usize> for Page {
     fn sub(self, other: usize) -> Page {
         Page {
             number: self.number - other,
-            size: self.size
+            size: self.size,
         }
     }
 }
@@ -172,7 +175,7 @@ bitflags::bitflags! {
         /// and a 2MiB page in P2
         const HUGE_PAGE = 1 << 7;
         /// If set, this page will not be flushed in the TLB. PGE bit in CR4 must be set.
-        const GLOBAL = 1 << 8;
+        const GLOBAL = 1 << 8; // TODO(userspace): map kernel pages as global?
         /// Do not allow executing code from this page. NXE bit in EFER must be set.
         const NO_EXECUTE = 1 << 63;
     }
@@ -226,31 +229,33 @@ impl<L: TableLevel> PageTable<L> {
     }
 
     fn next_table_addr(&self, index: usize) -> Option<u64>
-        where L: HierarchicalLevel
+    where
+        L: HierarchicalLevel,
     {
         let entry_flags = self[index].flags();
 
-        if entry_flags.contains(self::EntryFlags::PRESENT) && !entry_flags.contains(self::EntryFlags::HUGE_PAGE) {
+        if entry_flags.contains(self::EntryFlags::PRESENT)
+            && !entry_flags.contains(self::EntryFlags::HUGE_PAGE)
+        {
             let table_address = self as *const _ as u64;
             Some((0xFFFF << 48) | (table_address << 9) | ((index as u64) << 12))
-            // HEADS UP ^. This first mask would change if the p4 table were recursively mapped to
-            // an entry in the 0 sign extended half of the address space. BEWARE!
+        // HEADS UP ^. This first mask would change if the p4 table were recursively mapped to
+        // an entry in the 0 sign extended half of the address space. BEWARE!
         } else {
             None
         }
     }
 
     fn next_page_table(&self, index: usize) -> Option<&PageTable<L::NextLevel>>
-        where L: HierarchicalLevel
+    where
+        L: HierarchicalLevel,
     {
-        unsafe {
-            self.next_table_addr(index)
-                .map(|addr| &*(addr as *const _))
-        }
+        unsafe { self.next_table_addr(index).map(|addr| &*(addr as *const _)) }
     }
 
     fn next_page_table_mut(&mut self, index: usize) -> Option<&mut PageTable<L::NextLevel>>
-        where L: HierarchicalLevel
+    where
+        L: HierarchicalLevel,
     {
         unsafe {
             self.next_table_addr(index)
@@ -258,22 +263,30 @@ impl<L: TableLevel> PageTable<L> {
         }
     }
 
-
     pub fn next_table_create(&mut self, index: usize) -> Option<&mut PageTable<L::NextLevel>>
-        where L: HierarchicalLevel
+    where
+        L: HierarchicalLevel,
     {
         if self.next_page_table(index).is_none() {
-            if self.entries[index].flags().contains(self::EntryFlags::HUGE_PAGE){
+            if self.entries[index]
+                .flags()
+                .contains(self::EntryFlags::HUGE_PAGE)
+            {
                 assert!(L::CAN_BE_HUGE, "Page has huge bit but cannot be huge!");
             } else {
-                let frame = PHYSICAL_ALLOCATOR.allocate(0).expect("No physical frames available!");
+                let frame = PHYSICAL_ALLOCATOR
+                    .allocate(0)
+                    .expect("No physical frames available!");
 
                 self.entries[index].set(
                     frame.start_address(),
-                    self::EntryFlags::PRESENT |
-                        self::EntryFlags::WRITABLE
+                    self::EntryFlags::PRESENT
+                        | self::EntryFlags::WRITABLE
+                        | self::EntryFlags::USER_ACCESSIBLE, // TODO(userspace)
                 );
-                self.next_page_table_mut(index).expect("No next table!").zero();
+                self.next_page_table_mut(index)
+                    .expect("No next table!")
+                    .zero();
             }
         }
 
@@ -293,37 +306,4 @@ impl<L: TableLevel> IndexMut<usize> for PageTable<L> {
     fn index_mut(&mut self, index: usize) -> &mut PageTableEntry {
         &mut self.entries[index]
     }
-}
-
-
-pub fn new_process_page_tables() -> InactivePageMap {
-    let mut temporary_page = TemporaryPage::new();
-
-    // This must be duplicated to avoid double locks. This is safe though -- in this context!
-    let mut active_table = unsafe { ActivePageMap::new() };
-
-    let frame = PHYSICAL_ALLOCATOR.allocate(0).expect("no more frames");
-    let new_table = InactivePageMap::new(
-        frame,
-        Cr3::read().1,
-        &mut active_table,
-        &mut temporary_page
-    );
-
-    // Copy kernel pml4 entry
-    let kernel_pml4_entry = active_table.p4()[511];
-    let table = unsafe {
-        temporary_page.map_table_frame(frame.start_address(), &mut active_table)
-    };
-
-    table[511] = kernel_pml4_entry;
-
-    unsafe {
-        temporary_page.unmap(&mut active_table);
-    }
-
-    // Drop this lock so that the RAII guarded temporary page can be destroyed
-    drop(active_table);
-
-    new_table
 }

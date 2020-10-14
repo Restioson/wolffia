@@ -1,11 +1,11 @@
-use core::{mem, ptr::NonNull, ops::Deref};
-use crate::util;
 use crate::acpi_handler::WolffiaAcpiHandler;
+use crate::util;
+use core::{mem, ops::Deref, ptr::NonNull};
 
 pub unsafe fn map_physical_region<T>(
     physical_address: u64,
     size: u64,
-    mutable: bool
+    mutable: bool,
 ) -> PhysicalMapping<T> {
     let frames = util::round_up_divide(size as u64, 4096) as u64;
     let physical_begin_frame = physical_address / 4096;
@@ -21,8 +21,7 @@ pub unsafe fn map_physical_region<T>(
     PhysicalMapping {
         physical_start: physical_begin_frame * 4096,
         // alloc_ptr is zero if there is no more heap memory available
-        virtual_start: NonNull::new(obj_ptr as *mut T)
-            .expect("Ran out of heap memory!"),
+        virtual_start: NonNull::new(obj_ptr as *mut T).expect("Ran out of heap memory!"),
         mapped_length: frames * 4096,
         mutable,
     }
@@ -36,7 +35,10 @@ pub struct PhysicalMapping<T> {
 }
 
 impl<T> PhysicalMapping<T> {
-    pub fn into_acpi(self, handler: WolffiaAcpiHandler) -> acpi::PhysicalMapping<WolffiaAcpiHandler, T> {
+    pub fn into_acpi(
+        self,
+        handler: WolffiaAcpiHandler,
+    ) -> acpi::PhysicalMapping<WolffiaAcpiHandler, T> {
         let mapping = acpi::PhysicalMapping {
             physical_start: self.physical_start as usize,
             virtual_start: self.virtual_start,
@@ -67,10 +69,7 @@ impl<T> Drop for PhysicalMapping<T> {
         let page_begin = obj_addr & !0xFFF;
 
         unsafe {
-            crate::HEAP.dealloc_specific(
-                page_begin as *mut u8,
-                self.mapped_length / 4096,
-            );
+            crate::HEAP.dealloc_specific(page_begin as *mut u8, self.mapped_length / 4096);
         }
     }
 }

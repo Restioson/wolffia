@@ -1,16 +1,13 @@
-use multiboot2::{BootInformation, ElfSectionFlags};
+use crate::memory::heap::Heap;
 use crate::memory::paging::{self, *};
 use crate::memory::{bootstrap_heap::BOOTSTRAP_HEAP, physical_allocator::PHYSICAL_ALLOCATOR};
-use crate::memory::heap::Heap;
 use crate::util;
+use multiboot2::{BootInformation, ElfSectionFlags};
 
+use x86_64::registers::control::{Cr0, Cr0Flags};
 use x86_64::PhysAddr;
-use x86_64::registers::control::{Cr0Flags, Cr0};
 
-pub fn remap_kernel(
-    boot_info: &BootInformation,
-    heap_tree_start_virt: u64,
-) {
+pub fn remap_kernel(boot_info: &BootInformation, heap_tree_start_virt: u64) {
     let mut temporary_page = TemporaryPage::new();
 
     trace!("Creating new page tables");
@@ -18,22 +15,23 @@ pub fn remap_kernel(
     // This must be duplicated to avoid double locks. This is safe though -- in this context!
     let mut active_table = unsafe { paging::ActivePageMap::new() };
     let frame = PHYSICAL_ALLOCATOR.allocate(0).expect("no more frames");
-    let mut new_table = paging::InactivePageMap::new(
-        frame,
-        Cr3::read().1,
-        &mut active_table,
-        &mut temporary_page
-    );
+    let mut new_table = unsafe {
+        // SAFETY: frames returned from the allocator are always valid.
+        paging::InactivePageMap::new(frame, Cr3::read().1, &mut active_table, &mut temporary_page)
+    };
 
     trace!("Mapping new page tables");
 
     active_table.with_inactive_p4(&mut new_table, &mut temporary_page, |mapper| {
-        let elf_sections_tag = boot_info.elf_sections_tag()
+        let elf_sections_tag = boot_info
+            .elf_sections_tag()
             .expect("Memory map tag required");
 
         // Map kernel sections
         for section in elf_sections_tag.sections() {
-            if !section.is_allocated() { continue; }
+            if !section.is_allocated() {
+                continue;
+            }
 
             assert_eq!(
                 section.start_address() % 4096,
@@ -42,14 +40,14 @@ pub fn remap_kernel(
                 section.name(),
             );
 
-            let mut flags = EntryFlags::from_bits_truncate(0) | EntryFlags::USER_ACCESSIBLE; // TODO
+            let mut flags = EntryFlags::USER_ACCESSIBLE; // TODO(userspace)
 
             if section.flags().contains(ElfSectionFlags::WRITABLE) {
-                flags = flags | EntryFlags::WRITABLE;
+                flags |= EntryFlags::WRITABLE;
             }
 
             if !section.flags().contains(ElfSectionFlags::EXECUTABLE) {
-                flags = flags | EntryFlags::NO_EXECUTE;
+                flags |= EntryFlags::NO_EXECUTE;
             }
 
             unsafe {
@@ -66,7 +64,8 @@ pub fn remap_kernel(
             mapper.map_to(
                 Page::containing_address(crate::vga::VIRTUAL_VGA_PTR, PageSize::Kib4),
                 PhysAddr::new(0xb8000),
-                EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::USER_ACCESSIBLE, // TODO
+                // TODO(userspace): map to specific process
+                EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::USER_ACCESSIBLE,
                 InvalidateTlb::NoInvalidate,
             );
         }
@@ -74,32 +73,29 @@ pub fn remap_kernel(
 
     // Map bootstrap heap
     let bootstrap_heap_start_page = BOOTSTRAP_HEAP.start() / 4096;
-    let bootstrap_heap_end_page = util::round_up_divide(
-        BOOTSTRAP_HEAP.end(),
-        4096
-    );
+    let bootstrap_heap_end_page = util::round_up_divide(BOOTSTRAP_HEAP.end(), 4096);
     let bootstrap_heap_page_range = bootstrap_heap_start_page..=bootstrap_heap_end_page;
 
     active_table.remap_range(
         &mut new_table,
         &mut temporary_page,
         bootstrap_heap_page_range,
-        EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE // TODO
+        // TODO(userspace)
+        EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
     );
 
     // Map heap
     let heap_tree_start_page = heap_tree_start_virt / 4096;
-    let heap_tree_end_page = util::round_up_divide(
-        heap_tree_start_virt + Heap::tree_size() as u64,
-        4096
-    );
+    let heap_tree_end_page =
+        util::round_up_divide(heap_tree_start_virt + Heap::tree_size() as u64, 4096);
     let heap_tree_page_range = heap_tree_start_page..=heap_tree_end_page;
 
     active_table.remap_range(
         &mut new_table,
         &mut temporary_page,
         heap_tree_page_range,
-        EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE // TODO
+        // TODO(userspace)
+        EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
     );
 
     trace!("mem: switching page tables");

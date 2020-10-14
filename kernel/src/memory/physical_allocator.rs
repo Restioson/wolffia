@@ -1,12 +1,15 @@
-///! A modified buddy bitmap allocator. Written originally in
-/// [buddy allocator workshop](https://github.com/Restioson/buddy-allocator-workshop).
-use core::{iter, ops::{Range, Deref, DerefMut}};
-use alloc::boxed::Box;
-use spin::{Mutex, Once};
 use super::bootstrap_heap::{BootstrapHeapBox, BOOTSTRAP_HEAP};
-use friendly::{Tree, Block};
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::convert::TryInto;
+///! A modified buddy bitmap allocator. Written originally in
+/// [buddy allocator workshop](https://github.com/Restioson/buddy-allocator-workshop).
+use core::{
+    iter,
+    ops::{Deref, DerefMut, Range},
+};
+use friendly::{Block, Tree};
+use spin::{Mutex, Once};
 use x86_64::structures::paging::PhysFrame;
 use x86_64::PhysAddr;
 
@@ -18,9 +21,8 @@ const BASE_ORDER: u8 = 12;
 
 /// The physical frame allocator. Requires the bootstrap heap to be initialized, or else the
 /// initializer will panic.
-pub static PHYSICAL_ALLOCATOR: PhysicalAllocator<'static> = PhysicalAllocator {
-    trees: Once::new(),
-};
+pub static PHYSICAL_ALLOCATOR: PhysicalAllocator<'static> =
+    PhysicalAllocator { trees: Once::new() };
 
 pub type PhysicalTree<'a> = Tree<TreeBox<'a>, LEVEL_COUNT, BASE_ORDER>;
 
@@ -35,12 +37,12 @@ impl<'a> PhysicalAllocator<'a> {
     /// main kernel heap. In the second stage, the rest of the GiBs are set up, using the kernel
     /// heap.
     pub fn init_prelim<'r, I>(&self, usable: I)
-        where I: Iterator<Item=&'r Range<u64>> + Clone + 'r
+    where
+        I: Iterator<Item = &'r Range<u64>> + Clone + 'r,
     {
         self.trees.call_once(|| {
-            let mut trees: [Mutex<Option<PhysicalTree<'a>>>; 256] = array_init::array_init(|_| {
-                Mutex::new(None)
-            });
+            let mut trees: [Mutex<Option<PhysicalTree<'a>>>; 256] =
+                array_init::array_init(|_| Mutex::new(None));
 
             // Init the first 8 trees on the bootstrap heap
             for (i, slot) in trees.iter_mut().take(8).enumerate() {
@@ -48,11 +50,11 @@ impl<'a> PhysicalAllocator<'a> {
 
                 let tree = PhysicalTree::new(
                     usable,
-                    TreeBox::Bootstrap(
-                        unsafe {
-                            BOOTSTRAP_HEAP.allocate().expect("Ran out of bootstrap heap memory!")
-                        }
-                    )
+                    TreeBox::Bootstrap(unsafe {
+                        BOOTSTRAP_HEAP
+                            .allocate()
+                            .expect("Ran out of bootstrap heap memory!")
+                    }),
                 );
 
                 *slot = Mutex::new(Some(tree));
@@ -64,7 +66,8 @@ impl<'a> PhysicalAllocator<'a> {
 
     /// Initialise the rest of the allocator's gibbibytes. See [PhysicalAllocator.init_prelim].
     pub fn init_rest<'r, I>(&self, gibbibytes: u8, usable: I)
-        where I: Iterator<Item=&'r Range<u64>> + Clone + 'r
+    where
+        I: Iterator<Item = &'r Range<u64>> + Clone + 'r,
     {
         let trees = self.trees.wait().unwrap();
 
@@ -79,36 +82,33 @@ impl<'a> PhysicalAllocator<'a> {
                 .map_err(|_| unreachable!())
                 .unwrap();
 
-            let tree = PhysicalTree::new(
-                usable,
-                TreeBox::Heap(blocks)
-            );
+            let tree = PhysicalTree::new(usable, TreeBox::Heap(blocks));
             *trees[i as usize].lock() = Some(tree);
         }
     }
 
     /// Filter out addresses that apply to a GiB and make them local to it
-    fn localize<'r, I>(gib: u8, usable: I) -> impl Iterator<Item=Range<usize>> + Clone + 'r
-        where I: Iterator<Item=&'r Range<u64>> + Clone + 'r
+    fn localize<'r, I>(gib: u8, usable: I) -> impl Iterator<Item = Range<usize>> + Clone + 'r
+    where
+        I: Iterator<Item = &'r Range<u64>> + Clone + 'r,
     {
-        (&usable).clone()
-            .filter_map(move |range| {
-                let gib = ((gib as usize) << 30)..((gib as usize + 1 << 30) + 1);
+        (&usable).clone().filter_map(move |range| {
+            let gib = ((gib as usize) << 30)..(((gib as usize + 1) << 30) + 1);
 
-                // If the range covers any portion of the GiB
-                if !(range.start as usize > gib.end) && !((range.end as usize) < gib.start) {
-                    let end = range.end as usize - gib.start;
-                    let begin = if range.start as usize >= gib.start {
-                        range.start as usize - gib.start // Begin is within this GiB
-                    } else {
-                        0 // Begin is earlier than this GiB
-                    };
-
-                    Some(begin..end)
+            // If the range covers any portion of the GiB
+            if range.start as usize <= gib.end && (range.end as usize) >= gib.start {
+                let end = range.end as usize - gib.start;
+                let begin = if range.start as usize >= gib.start {
+                    range.start as usize - gib.start // Begin is within this GiB
                 } else {
-                    None
-                }
-            })
+                    0 // Begin is earlier than this GiB
+                };
+
+                Some(begin..end)
+            } else {
+                None
+            }
+        })
     }
 
     /// Allocate a frame of order `order`. Panics if not initialized. Does __not__ zero the memory.
@@ -124,11 +124,10 @@ impl<'a> PhysicalAllocator<'a> {
 
         // Try every tree. If it's locked, come back to it later.
         loop {
-            let index = tried.iter()
+            let index = tried
+                .iter()
                 .position(|i| *i == TryState::Untried)
-                .or_else(
-                    || tried.iter().position(|i| *i == TryState::WasInUse)
-                )?;
+                .or_else(|| tried.iter().position(|i| *i == TryState::WasInUse))?;
 
             let trees = self.trees.wait().unwrap();
 
@@ -139,9 +138,10 @@ impl<'a> PhysicalAllocator<'a> {
                     // Try to allocate something on the tree
                     match tree.allocate(order) {
                         Some(address) => {
-                            let addr = address + (index * (1 << PhysicalTree::max_order() + BASE_ORDER));
+                            let addr =
+                                address + (index * (1 << (PhysicalTree::max_order() + BASE_ORDER)));
                             return Some(PhysFrame::containing_address(PhysAddr::new(addr as u64)));
-                        },
+                        }
                         None => tried[index] = TryState::Tried, // Tree empty for alloc of this size
                     }
                 } else {
@@ -160,7 +160,7 @@ impl<'a> PhysicalAllocator<'a> {
     /// or if block is out of bounds of the # of GiB available.
     pub fn deallocate(&self, frame_addr: u64, order: u8) {
         let tree = (frame_addr as usize) >> (LEVEL_COUNT - 1 + BASE_ORDER);
-        let local_ptr = (frame_addr % (1 << LEVEL_COUNT - 1 + BASE_ORDER)) as *const u8;
+        let local_ptr = (frame_addr % (1 << (LEVEL_COUNT - 1 + BASE_ORDER))) as *const u8;
 
         let trees = self.trees.wait().unwrap();
         let mut lock = trees[tree].lock();

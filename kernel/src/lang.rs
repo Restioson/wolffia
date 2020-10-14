@@ -1,10 +1,10 @@
 //! Lang items
 
 use crate::halt;
+use crate::vga::{Colour, ColourPair, VgaWriter};
+use core::alloc::Layout;
 use core::fmt::Write;
 use core::panic::PanicInfo;
-use core::alloc::Layout;
-use crate::vga::{VgaWriter, ColourPair, Colour};
 use uart_16550::SerialPort;
 
 // A note on the `#[no_mangle]`s:
@@ -12,12 +12,12 @@ use uart_16550::SerialPort;
 
 #[lang = "eh_personality"]
 #[no_mangle]
-unsafe extern fn eh_personality() {}
+unsafe extern "C" fn eh_personality() {}
 
 #[panic_handler]
 #[no_mangle]
 // TODO backtrace
-unsafe extern fn panic_fmt(info: &PanicInfo) -> ! {
+unsafe extern "C" fn panic_fmt(info: &PanicInfo) -> ! {
     let mut vga_writer = VgaWriter::new();
     let mut serial = SerialPort::new(0x3f8);
 
@@ -32,7 +32,7 @@ unsafe extern fn panic_fmt(info: &PanicInfo) -> ! {
     if let Some(loc) = info.location() {
         let _ = write!(
             &mut vga_writer,
-            "Panicked at \"{}\", {file}:{line}\n",
+            "Panicked at \"{}\", {file}:{line}",
             arguments,
             file = loc.file(),
             line = loc.line()
@@ -40,14 +40,22 @@ unsafe extern fn panic_fmt(info: &PanicInfo) -> ! {
 
         let _ = write!(
             &mut serial,
-            "Panicked at \"{}\", {file}:{line}\n",
+            "Panicked at \"{}\", {file}:{line}",
             arguments,
             file = loc.file(),
             line = loc.line()
         );
     } else {
-        let _ = write!(&mut vga_writer, "Panicked at \"{}\" at an undefined location", arguments);
-        let _ = write!(&mut serial, "Panicked at \"{}\" at an undefined location", arguments);
+        let _ = write!(
+            &mut vga_writer,
+            "Panicked at \"{}\" at an undefined location",
+            arguments
+        );
+        let _ = write!(
+            &mut serial,
+            "Panicked at \"{}\" at an undefined location",
+            arguments
+        );
     }
 
     halt()

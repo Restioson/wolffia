@@ -1,5 +1,5 @@
-use acpi::{self, AcpiHandler, AcpiError, AcpiTables};
 use crate::memory::physical_mapping::{self, PhysicalMapping};
+use acpi::{self, AcpiError, AcpiHandler, AcpiTables};
 
 pub fn acpi_init() -> Result<AcpiTables<WolffiaAcpiHandler>, AcpiError> {
     info!("acpi: initializing");
@@ -29,11 +29,8 @@ impl AcpiHandler for WolffiaAcpiHandler {
         size: usize,
     ) -> acpi::PhysicalMapping<Self, T> {
         // Map immutable region
-        let region: PhysicalMapping<T> = physical_mapping::map_physical_region(
-            physical_address as u64,
-            size as u64,
-            false
-        );
+        let region: PhysicalMapping<T> =
+            physical_mapping::map_physical_region(physical_address as u64, size as u64, false);
 
         region.into_acpi(self.clone())
     }
@@ -45,10 +42,7 @@ impl AcpiHandler for WolffiaAcpiHandler {
         let page_begin = obj_addr & !0xFFF;
 
         unsafe {
-            crate::HEAP.dealloc_specific(
-                page_begin as *mut u8,
-                region.mapped_length as u64 / 4096,
-            );
+            crate::HEAP.dealloc_specific(page_begin as *mut u8, region.mapped_length as u64 / 4096);
         }
     }
 }

@@ -2,16 +2,16 @@
 // Many thanks!
 
 use super::*;
-use core::ops::{Deref, DerefMut};
-use core::ops::RangeInclusive;
 use crate::util::round_up_divide;
-use core::ops::Range;
-use core::ptr::NonNull;
 use alloc::vec::Vec;
+use core::alloc::{GlobalAlloc, Layout};
+use core::ops::Range;
+use core::ops::RangeInclusive;
+use core::ops::{Deref, DerefMut};
+use core::ptr::NonNull;
 use x86_64::registers::control::{Cr3, Cr3Flags};
-use x86_64::{PhysAddr, VirtAddr};
 use x86_64::structures::paging::PhysFrame;
-use core::alloc::{Layout, GlobalAlloc};
+use x86_64::{PhysAddr, VirtAddr};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum FreeMemory {
@@ -44,9 +44,10 @@ impl Mapper {
     ///
     /// Must be unique.
     const unsafe fn new() -> Self {
-        // The address points to the recursively mapped entry (511) in the P4 table, which we can
-        // use to access the P4 table itself.
-        //                sign ext  p4  p3  p2  p1  offset
+        #[allow(clippy::inconsistent_digit_grouping)] // It's specifically laid out
+                                                      // The address points to the recursively mapped entry (511) in the P4 table, which we can
+                                                      // use to access the P4 table itself.
+                                                      //                sign ext  p4  p3  p2  p1  offset
         const P4: u64 = 0o177_777_776_776_776_776_0000;
 
         Mapper {
@@ -70,10 +71,10 @@ impl Mapper {
             p3.and_then(|p3| {
                 // 1GiB page
                 let p3_entry = &p3[page.p3_index()];
-                if p3_entry.physical_address().is_some() {
-                    if p3_entry.flags().contains(EntryFlags::HUGE_PAGE) {
-                        panic!("1 GiB pages are not supported!");
-                    }
+                if p3_entry.physical_address().is_some()
+                    && p3_entry.flags().contains(EntryFlags::HUGE_PAGE)
+                {
+                    panic!("1 GiB pages are not supported!");
                 }
 
                 if let Some(p2) = p3.next_page_table(page.p3_index()) {
@@ -81,17 +82,17 @@ impl Mapper {
 
                     // 2MiB page
                     if let Some(start_frame) = p2_entry.physical_address() {
-                        if p2_entry.flags().contains(EntryFlags::PRESENT | EntryFlags::HUGE_PAGE) {
+                        if p2_entry
+                            .flags()
+                            .contains(EntryFlags::PRESENT | EntryFlags::HUGE_PAGE)
+                        {
                             // Check that the address is 2MiB aligned
                             assert_eq!(
                                 (start_frame.as_u64() >> 12) % PAGE_TABLE_ENTRIES,
                                 0,
                                 "Adress is not 2MiB aligned!"
                             );
-                            return Some((
-                                *p2_entry,
-                                PageSize::Mib2,
-                            ));
+                            return Some((*p2_entry, PageSize::Mib2));
                         }
                     }
                 }
@@ -119,14 +120,16 @@ impl Mapper {
         flags: EntryFlags,
         invplg: InvalidateTlb,
     ) {
-        let p2 = self.p4_mut()
-            .next_table_create(page.p4_index()).expect("No next p3 table!")
-            .next_table_create(page.p3_index()).expect("No next p2 table!");
+        let p2 = self
+            .p4_mut()
+            .next_table_create(page.p4_index())
+            .expect("No next p3 table!")
+            .next_table_create(page.p3_index())
+            .expect("No next p2 table!");
 
         assert!(page.size.is_some(), "Page to map requires size!");
 
         if page.size.unwrap() == PageSize::Kib4 {
-
             let p1 = match p2.next_table_create(page.p2_index()) {
                 Some(p1) => p1,
                 None => {
@@ -138,12 +141,8 @@ impl Mapper {
                 }
             };
 
-
             // 4kib page
-            p1[page.p1_index()].set(
-                physical_address,
-                flags | EntryFlags::PRESENT,
-            );
+            p1[page.p1_index()].set(physical_address, flags | EntryFlags::PRESENT);
 
             if invplg == InvalidateTlb::Invalidate {
                 tlb::flush(::x86_64::VirtAddr::new(page.start_address().unwrap() as u64));
@@ -158,7 +157,7 @@ impl Mapper {
         page: Page,
         flags: EntryFlags,
         invplg: InvalidateTlb,
-        zero: ZeroPage
+        zero: ZeroPage,
     ) {
         assert!(page.size.is_some(), "Page needs size!");
         let order = if page.size.unwrap() == PageSize::Kib4 {
@@ -167,7 +166,9 @@ impl Mapper {
             9
         };
 
-        let frame = PHYSICAL_ALLOCATOR.allocate(order).expect("Out of physical memory!");
+        let frame = PHYSICAL_ALLOCATOR
+            .allocate(order)
+            .expect("Out of physical memory!");
         self.map_to(page, frame.start_address(), flags, invplg);
 
         // Zero the page
@@ -187,11 +188,11 @@ impl Mapper {
         pages: RangeInclusive<Page>,
         flags: EntryFlags,
         invplg: InvalidateTlb,
-        zero: ZeroPage
+        zero: ZeroPage,
     ) {
         assert!(
-            pages.start().page_size() == Some(PageSize::Kib4) &&
-                pages.end().page_size() == Some(PageSize::Kib4),
+            pages.start().page_size() == Some(PageSize::Kib4)
+                && pages.end().page_size() == Some(PageSize::Kib4),
             "Only mapping of 4kib pages is supported"
         );
 
@@ -209,16 +210,21 @@ impl Mapper {
             page.start_address().unwrap()
         );
 
-        let p2 = self.p4_mut()
-            .next_page_table_mut(page.p4_index()).expect("Unmap called on unmapped page!")
-            .next_page_table_mut(page.p3_index()).expect("Unmap called on unmapped page!");
+        let p2 = self
+            .p4_mut()
+            .next_page_table_mut(page.p4_index())
+            .expect("Unmap called on unmapped page!")
+            .next_page_table_mut(page.p3_index())
+            .expect("Unmap called on unmapped page!");
 
         let p1 = p2.next_page_table_mut(page.p2_index());
 
         if let Some(p1) = p1 {
             // 4kib page
 
-            let frame = p1[page.p1_index()].physical_address().expect("Page already unmapped!");
+            let frame = p1[page.p1_index()]
+                .physical_address()
+                .expect("Page already unmapped!");
             p1[page.p1_index()].set_unused();
 
             // TODO free p1/p2/p3 tables if they are empty
@@ -228,7 +234,9 @@ impl Mapper {
         } else {
             // Huge 2mib page
 
-            let frame = p2[page.p2_index()].physical_address().expect("Page already unmapped!");
+            let frame = p2[page.p2_index()]
+                .physical_address()
+                .expect("Page already unmapped!");
             p2[page.p2_index()].set_unused();
 
             // TODO free p2/p3 tables if they are empty
@@ -270,7 +278,7 @@ impl Mapper {
         invplg: InvalidateTlb,
     ) {
         let frame_end = round_up_divide(addresses.end as u64, 4096) as u64;
-        for frame_no in (addresses.start / 4096)..=frame_end  {
+        for frame_no in (addresses.start / 4096)..=frame_end {
             let address = frame_no * 4096;
 
             self.map_to(
@@ -286,9 +294,10 @@ impl Mapper {
         &mut self,
         mapping: PageRangeMapping,
         invplg: InvalidateTlb,
-        flags: EntryFlags
+        flags: EntryFlags,
     ) {
-        let frames = mapping.start_frame..=mapping.start_frame + mapping.pages.size_hint().1.unwrap() as u64;
+        let frames =
+            mapping.start_frame..=mapping.start_frame + mapping.pages.size_hint().1.unwrap() as u64;
 
         for (frame_no, page_no) in frames.zip(mapping.pages) {
             let phys_address = frame_no * 4096;
@@ -302,7 +311,6 @@ impl Mapper {
             );
         }
     }
-
 }
 
 /// A 4kib page range mapping -- represents a contigous area of 4kib pages mapped to a contigous
@@ -318,7 +326,11 @@ pub struct PageRangeMapping {
 
 impl PageRangeMapping {
     pub fn new(start_page: Page, start_frame: u64, pages: u64) -> PageRangeMapping {
-        assert_eq!(start_page.page_size(), Some(PageSize::Kib4), "Start page needs to be 4kib!");
+        assert_eq!(
+            start_page.page_size(),
+            Some(PageSize::Kib4),
+            "Start page needs to be 4kib!"
+        );
         let page_number = start_page.start_address().unwrap() / 4096;
 
         PageRangeMapping {
@@ -339,12 +351,19 @@ impl TemporaryPage {
         let layout = Layout::from_size_align(0x1000, 0x1000).unwrap();
         let page_addr = unsafe { crate::HEAP.alloc(layout) };
         let page = Page::containing_address(page_addr as u64, PageSize::Kib4);
-        let frame_addr = ACTIVE_PAGE_TABLES.lock()
-            .walk_page_table(page).unwrap().0.physical_address().unwrap();
+        let frame_addr = ACTIVE_PAGE_TABLES
+            .lock()
+            .walk_page_table(page)
+            .unwrap()
+            .0
+            .physical_address()
+            .unwrap();
 
         // Unmap the heap page temporarily to avoid confusing the temporary page code
         unsafe {
-            ACTIVE_PAGE_TABLES.lock().unmap(page, FreeMemory::NoFree, InvalidateTlb::Invalidate);
+            ACTIVE_PAGE_TABLES
+                .lock()
+                .unmap(page, FreeMemory::NoFree, InvalidateTlb::Invalidate);
         }
 
         TemporaryPage { page, frame_addr }
@@ -352,12 +371,11 @@ impl TemporaryPage {
 
     /// Maps the temporary page to the given frame in the active table.
     /// Returns the start address of the temporary page.
-    pub unsafe fn map(
-        &mut self,
-        frame: PhysAddr,
-        active_table: &mut ActivePageMap
-    ) -> VirtAddr {
-        let page_addr = self.page.start_address().expect("Temporary page requires size");
+    pub unsafe fn map(&mut self, frame: PhysAddr, active_table: &mut ActivePageMap) -> VirtAddr {
+        let page_addr = self
+            .page
+            .start_address()
+            .expect("Temporary page requires size");
         assert!(
             active_table.walk_page_table(self.page).is_none(),
             "Temporary page {:?} at 0x{:x} is already mapped",
@@ -365,19 +383,28 @@ impl TemporaryPage {
             page_addr,
         );
 
-        active_table.map_to(self.page, frame, EntryFlags::WRITABLE, InvalidateTlb::Invalidate);
-        VirtAddr::new(self.page.start_address().expect("Page in TemporaryPage requires size"))
+        active_table.map_to(
+            self.page,
+            frame,
+            EntryFlags::WRITABLE,
+            InvalidateTlb::Invalidate,
+        );
+        VirtAddr::new(
+            self.page
+                .start_address()
+                .expect("Page in TemporaryPage requires size"),
+        )
     }
 
     /// Unmaps the temporary page in the active table.
     pub unsafe fn unmap(&mut self, active_table: &mut ActivePageMap) {
-        active_table.unmap(self.page, FreeMemory::NoFree, InvalidateTlb::NoInvalidate,);
+        active_table.unmap(self.page, FreeMemory::NoFree, InvalidateTlb::NoInvalidate);
     }
 
     pub unsafe fn map_table_frame(
         &mut self,
         frame: PhysAddr,
-        active_table: &mut ActivePageMap
+        active_table: &mut ActivePageMap,
     ) -> &mut PageTable<Level1> {
         &mut *(self.map(frame, active_table).as_mut_ptr())
     }
@@ -408,7 +435,7 @@ pub struct ActivePageMap {
 impl ActivePageMap {
     pub const unsafe fn new() -> ActivePageMap {
         ActivePageMap {
-            mapper: Mapper::new()
+            mapper: Mapper::new(),
         }
     }
 
@@ -416,20 +443,26 @@ impl ActivePageMap {
         &mut self,
         table: &mut InactivePageMap,
         temporary_page: &mut TemporaryPage,
-        f: F
+        f: F,
     ) -> R {
         let ret = {
-            let backup = PhysAddr::new(x86_64::registers::control::Cr3::read().0.start_address().as_u64());
+            let backup = PhysAddr::new(
+                x86_64::registers::control::Cr3::read()
+                    .0
+                    .start_address()
+                    .as_u64(),
+            );
 
             // map temporary_page to current p4 table
-            let p4_table = unsafe {
-                temporary_page.map_table_frame(backup.clone(), self)
-            };
+            let p4_table = unsafe { temporary_page.map_table_frame(backup, self) };
 
             // overwrite recursive mapping
             self.p4_mut()[510].set(
                 table.p4_frame.clone().start_address(),
-                EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE
+                EntryFlags::PRESENT
+                    | EntryFlags::WRITABLE
+                    | EntryFlags::NO_EXECUTE
+                    | EntryFlags::USER_ACCESSIBLE,
             );
 
             tlb::flush_all();
@@ -440,7 +473,10 @@ impl ActivePageMap {
             // restore recursive mapping to original p4 table
             p4_table[510].set(
                 backup,
-              EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE
+                EntryFlags::PRESENT
+                    | EntryFlags::WRITABLE
+                    | EntryFlags::NO_EXECUTE
+                    | EntryFlags::USER_ACCESSIBLE,
             );
 
             tlb::flush_all();
@@ -460,17 +496,14 @@ impl ActivePageMap {
         new_table: &mut InactivePageMap,
         temporary_page: &mut TemporaryPage,
         pages: RangeInclusive<u64>,
-        flags: EntryFlags
+        flags: EntryFlags,
     ) {
         let num_pages = pages.end() - pages.start();
         let mut frames = Vec::with_capacity(num_pages as usize);
         for i in 0..=num_pages {
-            let page = Page::containing_address(
-                (i + pages.start()) * 4096,
-                PageSize::Kib4
-            );
+            let page = Page::containing_address((i + pages.start()) * 4096, PageSize::Kib4);
 
-            let entry = ACTIVE_PAGE_TABLES.lock().walk_page_table(page).unwrap().0;
+            let entry = self.walk_page_table(page).unwrap().0;
             frames.push(entry.physical_address().unwrap());
         }
 
@@ -488,9 +521,11 @@ impl ActivePageMap {
 
     pub fn switch(&mut self, new_table: InactivePageMap) -> InactivePageMap {
         let (p4_frame, flags) = Cr3::read();
-        let old_table = InactivePageMap { p4_frame, flags, };
+        let old_table = InactivePageMap { p4_frame, flags };
 
-        unsafe { Cr3::write(new_table.p4_frame, new_table.flags); }
+        unsafe {
+            Cr3::write(new_table.p4_frame, new_table.flags);
+        }
 
         old_table
     }
@@ -526,31 +561,36 @@ impl Default for InactivePageMap {
 }
 
 impl InactivePageMap {
-    pub fn new(
+    /// # Safety:
+    ///
+    /// Frame must be valid.
+    pub unsafe fn new(
         frame: PhysFrame,
         flags: Cr3Flags,
         active_table: &mut ActivePageMap,
-        temporary_page: &mut TemporaryPage)
-    -> InactivePageMap {
+        temporary_page: &mut TemporaryPage,
+    ) -> InactivePageMap {
         {
-            let table = unsafe {
-                temporary_page.map_table_frame(frame.start_address(), active_table)
-            };
+            // SAFETY: frame must be valid (declared above in doc comment)
+            let table = temporary_page.map_table_frame(frame.start_address(), active_table);
 
             table.zero();
 
             // Set up recursive mapping for table
             table[510].set(
                 frame.start_address(),
-                EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::USER_ACCESSIBLE // TODO
+                EntryFlags::PRESENT
+                    | EntryFlags::WRITABLE
+                    | EntryFlags::NO_EXECUTE
+                    | EntryFlags::USER_ACCESSIBLE, // TODO(userspace0
             );
         }
 
-        unsafe {
-            temporary_page.unmap(active_table);
-        }
+        temporary_page.unmap(active_table);
 
-        InactivePageMap { p4_frame: frame, flags }
+        InactivePageMap {
+            p4_frame: frame,
+            flags,
+        }
     }
 }
-
