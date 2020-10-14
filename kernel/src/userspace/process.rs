@@ -91,11 +91,9 @@ impl Process {
     }
 
     pub fn run(&mut self) -> ! {
-        trace!("Switching pts");
         ACTIVE_PAGE_TABLES.lock().switch(self.page_tables.clone());
 
         if self.new {
-            trace!("Setting up");
             unsafe {
                 self.setup();
             }

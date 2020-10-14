@@ -1,5 +1,4 @@
 use self::process::{Process, PROCESSES};
-use crate::halt;
 use core::fmt::Write;
 
 pub const STACK_TOP: u64 = 0x7ffffffff000; // Top of lower half but page aligned
@@ -16,5 +15,6 @@ pub fn usermode_begin() -> ! {
 
 pub extern "C" fn usermode() -> ! {
     info!("Jumped into userspace successfully!");
+    info!("Intentional General Protection Fault incoming...");
     panic!("Nothing more to do.");
 }

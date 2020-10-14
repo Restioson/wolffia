@@ -4,6 +4,7 @@ use crate::halt;
 use crate::vga::{Colour, ColourPair, VgaWriter};
 use core::alloc::Layout;
 use core::fmt::Write;
+use core::sync::atomic;
 use core::panic::PanicInfo;
 use uart_16550::SerialPort;
 
@@ -17,9 +18,9 @@ unsafe extern "C" fn eh_personality() {}
 #[panic_handler]
 #[no_mangle]
 // TODO backtrace
-unsafe extern "C" fn panic_fmt(info: &PanicInfo) -> ! {
-    let mut vga_writer = VgaWriter::new();
-    let mut serial = SerialPort::new(0x3f8);
+extern "C" fn panic_fmt(info: &PanicInfo) -> ! {
+    let mut vga_writer = unsafe { VgaWriter::new() };
+    let mut serial = unsafe { SerialPort::new(0x3f8) };
 
     // Ignore the errors because we can't afford to panic in the panic handler
     let _ = vga_writer.colour = ColourPair::new(Colour::Red, Colour::Black);
@@ -58,7 +59,11 @@ unsafe extern "C" fn panic_fmt(info: &PanicInfo) -> ! {
         );
     }
 
-    halt()
+    let cs: u16;
+    unsafe { asm!("mov {}, cs", out(reg) cs); }
+
+    // TODO(userspace) this overwrites panic messages
+    unsafe { halt() }
 }
 
 #[alloc_error_handler]
