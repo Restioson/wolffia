@@ -15,26 +15,26 @@ ifeq ($(debug), 1)
     build_type := debug
     target_dir := target/$(target)/$(build_type)
     nasm_flags := -f elf64 -F dwarf -g
-    qemu_flags := -s -m 256M -d int -no-reboot -no-shutdown -monitor stdio -serial file:$(target_dir)/serial.log
+    qemu_flags := -s -m 256M -d int -no-reboot -no-shutdown -monitor stdio -serial file:kernel/$(target_dir)/serial.log
     cargo_flags := --features $(log_level)
 else
     build_type := release
 	target_dir := target/$(target)/$(build_type)
     nasm_flags := -f elf64
+    release_flags := --release
     cargo_flags := --release --features $(log_level)
  	rustflags := "-C code-model=kernel"
-    qemu_flags := -m 256M -serial file:$(target_dir)/serial.log
+    qemu_flags := -m 256M -serial file:kernel/$(target_dir)/serial.log
 endif
 
 ifeq ($(wait_for_gdb), 1)
     qemu_flags := -s -S
 endif
 
-linker_script := linker.ld
-grub_cfg := grub.cfg
 out_dir = $(build_containing_dir)/$(build_type)
-asm_dir := src/asm
+asm_dir := kernel/src/asm
 rust_kernel := $(out_dir)/libwolffia_kernel.a
+init_elf := $(out_dir)/init.elf
 asm_source_files := $(wildcard $(asm_dir)/*.asm)
 asm_obj_files = $(patsubst $(asm_dir)/%.asm, $(out_dir)/%.o, $(asm_source_files))
 
@@ -44,8 +44,8 @@ grub_iso = $(out_dir)/wolffia.iso
 default: build
 
 .PHONY: clean run build $(rust_kernel) iso test
-$(grub_iso): $(kernel) $(grub_cfg)
-	@cp $(grub_cfg) $(out_dir)/isofiles/boot/grub/
+$(grub_iso): $(kernel) kernel/grub.cfg
+	@cp kernel/grub.cfg $(out_dir)/isofiles/boot/grub/
 	@cp $(kernel) $(out_dir)/isofiles/boot/
 	@grub-mkrescue -o $(out_dir)/wolffia.iso $(out_dir)/isofiles
 
@@ -67,15 +67,21 @@ makedirs:
 	@mkdir -p $(out_dir)/isofiles
 	@mkdir -p $(out_dir)/isofiles/boot/grub
 
+$(init_elf):
+	@cd userspace/init && cargo +nightly build $(release_flags)
+	rm -f $(init_elf)
+	mv userspace/target/x86_64-unknown-wolffia/$(build_type)/init $(init_elf)
+
 # Compile rust
-$(rust_kernel):
-	@ RUST_TARGET_PATH=$(shell pwd) RUSTFLAGS=$(rustflags) cargo +nightly build $(cargo_flags)
+$(rust_kernel): $(init_elf)
+	@cd kernel && \
+		RUSTFLAGS=$(rustflags) cargo +nightly build $(cargo_flags)
 	@rm -f $(rust_kernel)
-	@mv $(target_dir)/libwolffia_kernel.a $(rust_kernel)
+	@mv kernel/$(target_dir)/libwolffia_kernel.a $(rust_kernel)
 
 # Compile kernel.elf
-$(kernel): $(asm_obj_files) $(linker_script) $(rust_kernel)
-	@ld -n -T $(linker_script) -o $(kernel) $(asm_obj_files) $(rust_kernel) --gc-sections
+$(kernel): $(asm_obj_files) kernel/linker.ld $(rust_kernel)
+	ld -n -T kernel/linker.ld -o $(kernel) $(asm_obj_files) $(rust_kernel) --gc-sections
 
 # Compile asm files
 $(out_dir)/%.o: $(asm_dir)/%.asm makedirs

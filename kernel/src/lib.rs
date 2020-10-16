@@ -33,13 +33,13 @@ mod interrupts;
 mod memory;
 mod pit;
 mod tss;
-mod userspace;
 mod syscall;
+pub mod process;
 
 #[global_allocator]
 pub static HEAP: Heap = Heap::new();
-
 pub static SERIAL_WRITER: Mutex<SerialPort> = Mutex::new(unsafe { SerialPort::new(0x3f8) });
+static INIT_ELF: &[u8] = include_bytes!(env!("WOLFFIA_INIT_PATH"));
 
 /// Writes formatted string to serial 1, for print macro use
 pub fn serial1_print(args: fmt::Arguments) {
@@ -63,7 +63,7 @@ pub extern "C" fn kmain(mb_info_addr: u64, guard_page_addr: u64) -> ! {
     let _acpi = acpi_handler::acpi_init();
     unsafe { syscall::setup_syscall() };
 
-    crate::userspace::usermode_begin()
+    unsafe { halt() }
 }
 
 /// # Safety

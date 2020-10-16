@@ -1,0 +1,8 @@
+[package]
+name = "libwolffia"
+version = "0.1.0"
+authors = ["Restioson <restiosondev@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+libwolffia_macros = { path = "libwolffia_macros" }

@@ -2,12 +2,16 @@ use crate::memory::paging::*;
 use core::sync::atomic::{AtomicU64, Ordering};
 use dashmap::DashMap;
 
-use super::*;
 use crate::memory::physical_allocator::PHYSICAL_ALLOCATOR;
 use crate::tss::TSS;
 use alloc::vec::Vec;
 use core::ops::RangeInclusive;
 use x86_64::registers::control::Cr3;
+use x86_64::VirtAddr;
+
+// Top of lower half but page aligned
+const STACK_TOP: VirtAddr = VirtAddr::new_truncate(0x7ffffffff000);
+const INITIAL_STACK_SIZE_PAGES: usize = 16; // 64kib stack
 
 lazy_static::lazy_static! {
     pub static ref PROCESSES: DashMap<ProcessId, Process> = DashMap::default();
@@ -31,11 +35,11 @@ impl ProcessId {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Process {
     pub page_tables: InactivePageMap,
-    stack_ptr: usize,
-    instruction_ptr: usize,
+    stack_ptr: VirtAddr,
+    instruction_ptr: VirtAddr,
     io_port_ranges: Vec<RangeInclusive<u16>>,
     new: bool,
 }
@@ -44,19 +48,19 @@ impl Process {
     /// # Safety
     ///
     /// Instruction ptr must be valid.
-    pub unsafe fn spawn(instruction_ptr: usize) -> ProcessId {
+    pub unsafe fn spawn(instruction_ptr: VirtAddr) -> ProcessId {
         let page_tables = Self::new_process_page_tables();
 
         let process = Process {
             page_tables,
-            stack_ptr: STACK_TOP as usize,
+            stack_ptr: STACK_TOP,
             instruction_ptr,
             io_port_ranges: Vec::new(),
             new: true,
         };
 
-        let pid = process::ProcessId::next();
-        process::PROCESSES.insert(pid, process);
+        let pid = ProcessId::next();
+        PROCESSES.insert(pid, process);
 
         pid
     }
@@ -107,7 +111,7 @@ impl Process {
             .lock_or_panic()
             .set_port_range_usable(0x3f8..=0x3F8 + 7, true);
 
-        unsafe { super::jump::jump_usermode(self.stack_ptr, self.instruction_ptr) }
+        unsafe { jump_usermode(self.stack_ptr, self.instruction_ptr) }
     }
 
     /// Sets up the process for it to be run for the first time.
@@ -117,7 +121,7 @@ impl Process {
     /// The page tables must have been switched to the process's AND the processor must be in ring0.
     unsafe fn setup(&mut self) {
         // Set up user stack
-        let stack_top = Page::containing_address(STACK_TOP, PageSize::Kib4);
+        let stack_top = Page::containing_address(STACK_TOP.as_u64(), PageSize::Kib4);
         let stack_bottom = stack_top - INITIAL_STACK_SIZE_PAGES;
 
         ACTIVE_PAGE_TABLES.lock().map_range(
@@ -127,4 +131,30 @@ impl Process {
             ZeroPage::Zero,
         );
     }
+}
+
+/// # Safety
+///
+/// Expects to be in the page tables where instruction and stack pointer are loaded and valid.
+unsafe fn jump_usermode(stack_ptr: VirtAddr, instruction_ptr: VirtAddr) -> ! {
+    asm!(
+    "
+        mov ax, 0x2b
+        mov ds, ax
+        mov es, ax
+        mov fs, ax
+        mov gs, ax
+
+        push 0x2b // stack segment
+        push {0} // stack pointer
+        pushfq // push RFLAGS
+        push 0x33 // code segment
+        push {1} // instruction pointer
+        iretq
+        ",
+    in(reg) stack_ptr.as_u64(),
+    in(reg) instruction_ptr.as_u64(),
+    );
+
+    unreachable!()
 }

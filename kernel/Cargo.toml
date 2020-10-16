@@ -28,6 +28,7 @@ acpi = "2.0.0"
 dashmap = { path = "../../dashmap", default-features = false, features = ["no_std"] }
 array-init = "0.1.1"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
+goblin = { version = "0.2.3", default-features = false }
 friendly = { git = "https://github.com/Restioson/friendly" }
 
 [features]

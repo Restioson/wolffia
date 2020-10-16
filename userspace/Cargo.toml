@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "libwolffia",
+    "libwolffia/libwolffia_macros",
+    "init"
+]

@@ -19,6 +19,9 @@ struct AsmCell<T>(UnsafeCell<T>);
 unsafe impl<T> Send for AsmCell<T> {}
 unsafe impl<T> Sync for AsmCell<T> {}
 
+/// # Safety
+///
+/// TSS's `privilege_stack_table[0]` must be initialised to a valid value.
 pub unsafe fn setup_syscall() {
     *SYSCALL_STACK.0.get() = TSS.wait().unwrap().tss.privilege_stack_table[0].as_u64();
 
@@ -41,10 +44,11 @@ pub unsafe fn setup_syscall() {
     SFMask::write(RFlags::INTERRUPT_FLAG);
 }
 
+// TODO noncanonical rip/rcx https://fuchsia.dev/fuchsia-src/concepts/kernel/sysret_problem
 /// # Syscall ABI
 ///
-/// Arguments are passed in `rdi, rsi, rdx, rcx, r8, r9`. `rcx` and `r11` are clobbered. The system
-/// call number is passed in `rax`, and the return is from `rax` too.
+/// Modified cdecl. Arguments are passed in `rdi, rsi, rdx, rcx, r8, r9`. `rcx` and `r11` are
+/// clobbered. The system call number is passed in `rax`, and the return is from `rax` too.
 #[naked]
 #[no_mangle]
 pub extern fn syscall_callback() {
@@ -54,29 +58,15 @@ pub extern fn syscall_callback() {
             mov [USER_RSP], rsp // Save RSP
             mov rsp, SYSCALL_STACK
 
-            // Save user state
             push rcx // RCX = userland IP,
             push r11 // R11 = userland EFLAGS
-            push rdi // Save user regs
-            push rsi
-            push rdx
-            push r10
-            push r8
-            push r9
-            sti
+            sti // Re-enable interrupts
 
             mov rdi, rax // First arg in rdi
             call syscall_handler
 
-            // Restore user state
-            pop r9
-            pop r8
-            pop r10
-            pop rdx
-            pop rsi
-            pop rdi
-            pop r11
-            pop rcx
+            pop r11 // RCX = userland IP,
+            pop rcx // R11 = userland EFLAGS
 
             mov rsp, [USER_RSP] // Restore user's rsp
 
@@ -86,12 +76,18 @@ pub extern fn syscall_callback() {
 }
 
 #[no_mangle]
-pub extern "C" fn syscall_handler(id: u64) -> isize {
+pub extern "C" fn syscall_handler(id: u64, arg1: u64, arg2: u64) -> isize {
     let syscall = Syscall::from_u64(id).unwrap();
     match syscall {
-        Syscall::Halt => unsafe { halt() },
+        Syscall::Halt => {
+            info!("Got system call halt");
+            unsafe { halt() }
+        },
         Syscall::Deadbeef => 0xdeadbeef,
-        _ => -1,
+        Syscall::Print => {
+            // TODO(syscall buffers)
+            panic!()
+        }
     }
 }
 
@@ -99,6 +95,7 @@ pub extern "C" fn syscall_handler(id: u64) -> isize {
 pub enum Syscall {
     Halt = 0,
     Deadbeef = 1,
+    Print = 2,
 }
 
 impl Syscall {
@@ -111,7 +108,7 @@ impl Syscall {
     }
 }
 
-pub fn syscall_raw(call: Syscall) -> i64 {
+pub extern "C" fn syscall_raw(call: Syscall) -> i64 {
     let out: i64;
     unsafe {
         asm!("syscall",
