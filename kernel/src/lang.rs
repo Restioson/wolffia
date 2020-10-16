@@ -4,7 +4,6 @@ use crate::halt;
 use crate::vga::{Colour, ColourPair, VgaWriter};
 use core::alloc::Layout;
 use core::fmt::Write;
-use core::sync::atomic;
 use core::panic::PanicInfo;
 use uart_16550::SerialPort;
 
@@ -58,9 +57,6 @@ extern "C" fn panic_fmt(info: &PanicInfo) -> ! {
             arguments
         );
     }
-
-    let cs: u16;
-    unsafe { asm!("mov {}, cs", out(reg) cs); }
 
     // TODO(userspace) this overwrites panic messages
     unsafe { halt() }

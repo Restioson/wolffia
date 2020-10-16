@@ -105,7 +105,7 @@ fn init_interrupt_handlers(idt: &mut InterruptDescriptorTable) {
             .set_stack_index(gdt::PANICKING_EXCEPTION_IST_INDEX);
         idt.non_maskable_interrupt
             .set_handler_fn(exceptions::nmi)
-            .set_stack_index(gdt::PANICKING_EXCEPTION_IST_INDEX);
+            .set_stack_index(gdt::NMI_IST_INDEX);
         idt.breakpoint
             .set_handler_fn(exceptions::breakpoint)
             .set_stack_index(gdt::PANICKING_EXCEPTION_IST_INDEX);

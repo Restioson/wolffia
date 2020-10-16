@@ -2,8 +2,6 @@ use super::bootstrap_heap::{BootstrapHeapBox, BOOTSTRAP_HEAP};
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::convert::TryInto;
-///! A modified buddy bitmap allocator. Written originally in
-/// [buddy allocator workshop](https://github.com/Restioson/buddy-allocator-workshop).
 use core::{
     iter,
     ops::{Deref, DerefMut, Range},

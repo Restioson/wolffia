@@ -34,6 +34,7 @@ mod memory;
 mod pit;
 mod tss;
 mod userspace;
+mod syscall;
 
 #[global_allocator]
 pub static HEAP: Heap = Heap::new();
@@ -60,6 +61,7 @@ pub extern "C" fn kmain(mb_info_addr: u64, guard_page_addr: u64) -> ! {
     info!("pit: ready");
 
     let _acpi = acpi_handler::acpi_init();
+    unsafe { syscall::setup_syscall() };
 
     crate::userspace::usermode_begin()
 }

@@ -41,7 +41,7 @@ use x86_64::structures::tss::TaskStateSegment;
 use x86_64::{PhysAddr, VirtAddr};
 
 pub const KERNEL_MAPPING_BEGIN: u64 = 0xffffffff80000000;
-const IST_STACK_SIZE_PAGES: u64 = 3;
+const IST_STACK_SIZE_PAGES: u64 = 4;
 
 pub fn init_memory(mb_info_addr: u64, guard_page_addr: u64) {
     info!("mem: initialising");

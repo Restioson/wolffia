@@ -63,48 +63,43 @@ start:
 ; push word 'f'
 ; call error_print
 ;
-; Outputs:
-; FlowerOS boot failed, code 0xf
-;
-; Error codes can be found in doc/Boot-Errors.md
+; Output:
+; wolffia boot failed, code 0xf
 error_print:
-
-    mov word [VGA_PTR +  0], 0x0446 ; F
-    mov word [VGA_PTR +  2], 0x046c ; l
-    mov word [VGA_PTR +  4], 0x046f ; o
-    mov word [VGA_PTR +  6], 0x0477 ; w
-    mov word [VGA_PTR +  8], 0x0465 ; e
-    mov word [VGA_PTR + 10], 0x0472 ; r
-    mov word [VGA_PTR + 12], 0x044f ; O
-    mov word [VGA_PTR + 14], 0x0453 ; S
-    mov word [VGA_PTR + 16], 0x0420 ;
-    mov word [VGA_PTR + 18], 0x0462 ; b
+    mov word [VGA_PTR +  0], 0x0477 ; w
+    mov word [VGA_PTR +  2], 0x046f ; o
+    mov word [VGA_PTR +  4], 0x046c ; l
+    mov word [VGA_PTR +  6], 0x0466 ; f
+    mov word [VGA_PTR +  8], 0x0466 ; f
+    mov word [VGA_PTR + 10], 0x0469 ; i
+    mov word [VGA_PTR + 12], 0x0461 ; a
+    mov word [VGA_PTR + 14], 0x0420 ;
+    mov word [VGA_PTR + 16], 0x0462 ; b
+    mov word [VGA_PTR + 18], 0x46f  ; o
     mov word [VGA_PTR + 20], 0x046f ; o
-    mov word [VGA_PTR + 22], 0x046f ; o
-    mov word [VGA_PTR + 24], 0x0474 ; t
-    mov word [VGA_PTR + 26], 0x0420 ;
-    mov word [VGA_PTR + 28], 0x0466 ; f
-    mov word [VGA_PTR + 30], 0x0461 ; a
-    mov word [VGA_PTR + 32], 0x0469 ; i
-    mov word [VGA_PTR + 34], 0x046c ; l
-    mov word [VGA_PTR + 36], 0x0465 ; e
-    mov word [VGA_PTR + 38], 0x0464 ; d
-    mov word [VGA_PTR + 40], 0x042c ; ,
-    mov word [VGA_PTR + 42], 0x0420 ;
-    mov word [VGA_PTR + 44], 0x0463 ; c
-    mov word [VGA_PTR + 46], 0x046f ; o
-    mov word [VGA_PTR + 48], 0x0464 ; d
-    mov word [VGA_PTR + 50], 0x0465 ; e
-    mov word [VGA_PTR + 52], 0x0420 ;
-    mov word [VGA_PTR + 54], 0x0430 ; 0
-    mov word [VGA_PTR + 56], 0x0478 ; x
+    mov word [VGA_PTR + 22], 0x0474 ; t
+    mov word [VGA_PTR + 24], 0x0420 ;
+    mov word [VGA_PTR + 26], 0x0466 ; f
+    mov word [VGA_PTR + 28], 0x0461 ; a
+    mov word [VGA_PTR + 30], 0x0469 ; i
+    mov word [VGA_PTR + 32], 0x046c ; l
+    mov word [VGA_PTR + 34], 0x0465 ; e
+    mov word [VGA_PTR + 36], 0x0464 ; d
+    mov word [VGA_PTR + 38], 0x042c ; ,
+    mov word [VGA_PTR + 40], 0x0420 ;
+    mov word [VGA_PTR + 42], 0x0463 ; c
+    mov word [VGA_PTR + 44], 0x046f ; o
+    mov word [VGA_PTR + 46], 0x0464 ; d
+    mov word [VGA_PTR + 48], 0x0465 ; e
+    mov word [VGA_PTR + 50], 0x0420 ;
+    mov word [VGA_PTR + 52], 0x0430 ; 0
+    mov word [VGA_PTR + 54], 0x0478 ; x
 
     pop ebx ; pop return addr
     pop ax ; pop (word) code
     or ax, 0x400 ; get vga code from character
 
-    hlt
-    mov word [VGA_PTR + 58], ax ; print the given error character
+    mov word [VGA_PTR + 56], ax ; print the given error character
 
     .loop:
         hlt

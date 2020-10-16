@@ -1,5 +1,4 @@
 use self::process::{Process, PROCESSES};
-use core::fmt::Write;
 
 pub const STACK_TOP: u64 = 0x7ffffffff000; // Top of lower half but page aligned
 pub const INITIAL_STACK_SIZE_PAGES: usize = 16; // 64kib stack
@@ -15,6 +14,15 @@ pub fn usermode_begin() -> ! {
 
 pub extern "C" fn usermode() -> ! {
     info!("Jumped into userspace successfully!");
+
+    unsafe {
+        asm!("syscall",
+            in("rax") 0,
+            lateout("rax") _, lateout("rcx") _, lateout("r11") _,
+            options(nostack)
+        );
+    }
+
     info!("Intentional General Protection Fault incoming...");
-    panic!("Nothing more to do.");
+    loop {}
 }
