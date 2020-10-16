@@ -30,8 +30,6 @@ pub unsafe fn setup_syscall() {
 
     let selectors = &GDT.selectors;
 
-   //panic!("{} {} {} {}", selectors.user_cs.0, selectors.user_ds.0, selectors.kernel_cs.0, selectors.kernel_ds.0);
-
     Star::write(
         selectors.user_cs,
         selectors.user_ds,
@@ -40,7 +38,7 @@ pub unsafe fn setup_syscall() {
     ).unwrap();
 
     // Ignore interrupts on syscall
-    SFMask::write(RFlags::from_bits_truncate(0));
+    SFMask::write(RFlags::INTERRUPT_FLAG);
 }
 
 /// # Syscall ABI
