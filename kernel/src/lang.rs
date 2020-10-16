@@ -58,7 +58,7 @@ extern "C" fn panic_fmt(info: &PanicInfo) -> ! {
         );
     }
 
-    // TODO(userspace) this overwrites panic messages
+    // TODO(userspace) this overwrites panic messages with GPF
     unsafe { halt() }
 }
 
