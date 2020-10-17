@@ -13,25 +13,26 @@ endif
 
 ifeq ($(debug), 1)
     build_type := debug
+    out_dir = $(build_containing_dir)/$(build_type)
     target_dir := target/$(target)/$(build_type)
     nasm_flags := -f elf64 -F dwarf -g
-    qemu_flags := -s -m 256M -d int -no-reboot -no-shutdown -monitor stdio -serial file:kernel/$(target_dir)/serial.log
+    qemu_flags := -s -m 256M -d int -no-reboot -no-shutdown -monitor stdio -serial file:$(out_dir)/serial.log
     cargo_flags := --features $(log_level)
 else
     build_type := release
+    out_dir = $(build_containing_dir)/$(build_type)
 	target_dir := target/$(target)/$(build_type)
     nasm_flags := -f elf64
     release_flags := --release
     cargo_flags := --release --features $(log_level)
  	rustflags := "-C code-model=kernel"
-    qemu_flags := -m 256M -serial file:kernel/$(target_dir)/serial.log
+    qemu_flags := -m 256M -serial file:$(out_dir)/serial.log
 endif
 
 ifeq ($(wait_for_gdb), 1)
     qemu_flags := -s -S
 endif
 
-out_dir = $(build_containing_dir)/$(build_type)
 asm_dir := kernel/src/asm
 rust_kernel := $(out_dir)/libwolffia_kernel.a
 init_elf := $(out_dir)/init.elf
@@ -67,10 +68,10 @@ makedirs:
 	@mkdir -p $(out_dir)/isofiles
 	@mkdir -p $(out_dir)/isofiles/boot/grub
 
-$(init_elf):
+$(init_elf): makedirs
 	@cd userspace/init && cargo +nightly build $(release_flags)
-	rm -f $(init_elf)
-	mv userspace/target/x86_64-unknown-wolffia/$(build_type)/init $(init_elf)
+	@rm -f $(init_elf)
+	@mv userspace/target/x86_64-unknown-wolffia/$(build_type)/init $(init_elf)
 
 # Compile rust
 $(rust_kernel): $(init_elf)

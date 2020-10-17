@@ -12,6 +12,7 @@ use core::ptr::NonNull;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::structures::paging::PhysFrame;
 use x86_64::{PhysAddr, VirtAddr};
+use crate::process::STACK_BOTTOM;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum FreeMemory {
@@ -29,6 +30,12 @@ pub enum InvalidateTlb {
 pub enum ZeroPage {
     Zero,
     NoZero,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum TryMapError {
+    InvalidAddress(Page),
+    AlreadyMapped(Page),
 }
 
 pub struct Mapper {
@@ -152,6 +159,9 @@ impl Mapper {
         }
     }
 
+    /// # Safety notes
+    ///
+    /// `ZeroPage::Zero` must *not* be passed if this is being used to map into an inactive page table.
     pub unsafe fn map(
         &mut self,
         page: Page,
@@ -199,6 +209,72 @@ impl Mapper {
         for no in pages.start().number()..=pages.end().number() {
             let page = Page::containing_address(no as u64 * 0x1000, PageSize::Kib4);
             self.map(page, flags, invplg, zero);
+        }
+    }
+
+    /// Tries to map a range of pages for a user.
+    pub unsafe fn try_map_user_range(
+        &mut self,
+        pages: RangeInclusive<Page>,
+        flags: EntryFlags,
+        invplg: InvalidateTlb,
+        ignore_already_mapped: bool,
+        zero: ZeroPage,
+    ) -> Result<(), TryMapError> {
+        assert!(
+            pages.start().page_size() == Some(PageSize::Kib4)
+                && pages.end().page_size() == Some(PageSize::Kib4),
+            "Only mapping of 4kib pages is supported"
+        );
+
+        let v_start = pages.start().start_address().unwrap();
+        let v_end = pages.end().start_address().unwrap();
+
+        // Last addr + 1 is noncanonical which triggers syscall bug
+        if *pages.end() == Page::containing_address((1 << 47) - 1, PageSize::Kib4) {
+            trace!("v_end + 1 noncanonical");
+            return Err(TryMapError::InvalidAddress(pages.end().clone()));
+        }
+
+        // Noncanonical address
+        if VirtAddr::try_new(v_end).is_err() {
+            return Err(TryMapError::InvalidAddress(pages.end().clone()))
+        } else if VirtAddr::try_new(v_start).is_err() {
+            return Err(TryMapError::InvalidAddress(pages.start().clone()))
+        }
+
+        // Kernel memory (higher half)
+        if v_end >> 63 == 1 {
+            return Err(TryMapError::InvalidAddress(pages.end().clone()));
+        } else if v_start >> 63 == 1 {
+            return Err(TryMapError::InvalidAddress(pages.start().clone()))
+        }
+
+        // Program stack
+        let stack_bottom = Page::containing_address(STACK_BOTTOM.as_u64(), PageSize::Kib4);
+        if pages.end().number > stack_bottom.number {
+            return Err(TryMapError::InvalidAddress(pages.end().clone()));
+        }
+
+        for no in pages.start().number()..=pages.end().number() {
+            let page = Page::containing_address(no as u64 * 0x1000, PageSize::Kib4);
+
+            if !ignore_already_mapped && self.walk_page_table(page).is_some() {
+                return Err(TryMapError::AlreadyMapped(page))
+            }
+
+            self.map(page, flags, invplg, zero);
+        }
+
+        Ok(())
+    }
+
+    pub unsafe fn set_flags(&mut self, pages: RangeInclusive<Page>, flags: EntryFlags, invplg: InvalidateTlb) {
+        for no in pages.start().number()..=pages.end().number() {
+            let page = Page::containing_address(no as u64 * 0x1000, PageSize::Kib4);
+
+            let paddr = self.walk_page_table(page).expect("Virtual address is not mapped!");
+            self.map_to(page, paddr.0.physical_address().unwrap(), flags, invplg)
         }
     }
 
@@ -398,7 +474,7 @@ impl TemporaryPage {
 
     /// Unmaps the temporary page in the active table.
     pub unsafe fn unmap(&mut self, active_table: &mut ActivePageMap) {
-        active_table.unmap(self.page, FreeMemory::NoFree, InvalidateTlb::NoInvalidate);
+        active_table.unmap(self.page, FreeMemory::NoFree, InvalidateTlb::Invalidate);
     }
 
     pub unsafe fn map_table_frame(
@@ -517,6 +593,15 @@ impl ActivePageMap {
                 }
             }
         });
+    }
+
+    pub fn with_inactive<F, E>(&mut self, new_table: InactivePageMap, f: F) -> Result<InactivePageMap, E>
+        where F: FnOnce(&mut ActivePageMap) -> Result<(), E>
+    {
+        let old = self.switch(new_table);
+        let res = f(self);
+        let new = self.switch(old);
+        res.map(|_| new)
     }
 
     pub fn switch(&mut self, new_table: InactivePageMap) -> InactivePageMap {

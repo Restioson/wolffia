@@ -19,6 +19,7 @@ use core::fmt;
 use core::fmt::Write;
 use spin::Mutex;
 use uart_16550::SerialPort;
+use crate::process::Process;
 
 mod lang;
 #[macro_use]
@@ -63,7 +64,11 @@ pub extern "C" fn kmain(mb_info_addr: u64, guard_page_addr: u64) -> ! {
     let _acpi = acpi_handler::acpi_init();
     unsafe { syscall::setup_syscall() };
 
-    unsafe { halt() }
+    info!("init: loading");
+    let pid = Process::spawn_from_elf(INIT_ELF).map_err(|e| panic!("{:#x?}", e)).unwrap();
+    info!("init: launching");
+
+    Process::run_by_pid(&pid);
 }
 
 /// # Safety

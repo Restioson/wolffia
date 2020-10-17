@@ -4,3 +4,9 @@ members = [
     "libwolffia/libwolffia_macros",
     "init"
 ]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

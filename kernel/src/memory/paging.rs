@@ -35,7 +35,7 @@ impl PageSize {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Page {
     number: usize,
     /// Size of page. None when unknown.

@@ -11,13 +11,10 @@ pub fn main(_args: TokenStream, input: TokenStream) -> TokenStream {
     let tokens: TokenStream = iter.collect();
 
     quote!(
-        #[allow(unused_attributes)]
-        #[link_args = "-nostartfiles"]
-        extern "C" {}
-
         #[no_mangle]
         pub fn _start() {
-            __main()
+            __main();
+            ::libwolffia::syscall::halt();
         }
 
         #[inline(always)]

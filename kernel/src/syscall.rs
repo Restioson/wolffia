@@ -6,6 +6,7 @@ use x86_64::registers::model_specific::{EferFlags, Efer, LStar, Star, SFMask};
 use x86_64::VirtAddr;
 use x86_64::registers::rflags::RFlags;
 use crate::halt;
+use crate::vga::VGA_WRITER;
 
 // TODO(SMP): use gs/swapgs
 /// SAFETY: always used from asm, one at a time.
@@ -60,10 +61,25 @@ pub extern fn syscall_callback() {
 
             push rcx // RCX = userland IP,
             push r11 // R11 = userland EFLAGS
-            sti // Re-enable interrupts
 
-            mov rdi, rax // First arg in rdi
+            // Push arguments (reverse order because of slice)
+            push rdx
+            push rsi
+            push rdi
+
+            // Re-enable interrupts
+            sti
+
+            // Make a slice out of the arguments
+            mov rsi, rsp // ptr
+            mov rdx, 3 // len
+            mov rdi, rax // syscall number
             call syscall_handler
+
+            // Pop arguments
+            pop rdi
+            pop rsi
+            pop rdx
 
             pop r11 // RCX = userland IP,
             pop rcx // R11 = userland EFLAGS
@@ -76,8 +92,10 @@ pub extern fn syscall_callback() {
 }
 
 #[no_mangle]
-pub extern "C" fn syscall_handler(id: u64, arg1: u64, arg2: u64) -> isize {
+pub extern "C" fn syscall_handler(id: u64, argv: *const u64, argc: u64) -> isize {
     let syscall = Syscall::from_u64(id).unwrap();
+    // SAFETY: this is correct (see asm above)
+    let args: &[u64] = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
     match syscall {
         Syscall::Halt => {
             info!("Got system call halt");
@@ -85,8 +103,17 @@ pub extern "C" fn syscall_handler(id: u64, arg1: u64, arg2: u64) -> isize {
         },
         Syscall::Deadbeef => 0xdeadbeef,
         Syscall::Print => {
-            // TODO(syscall buffers)
-            panic!()
+            // TODO(syscall buffers): check this
+            let slice: &[u8] = unsafe {
+                core::slice::from_raw_parts(
+                    args[0] as *const u8,
+                    args[1] as usize
+                )
+            };
+
+            let string = core::str::from_utf8(slice).unwrap();
+            VGA_WRITER.lock().write_str(string);
+            0
         }
     }
 }
@@ -103,6 +130,7 @@ impl Syscall {
         match v {
             0 => Some(Syscall::Halt),
             1 => Some(Syscall::Deadbeef),
+            2 => Some(Syscall::Print),
             _ => None,
         }
     }

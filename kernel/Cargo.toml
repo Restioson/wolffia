@@ -25,11 +25,20 @@ atomic_bitfield = "0.1.0"
 bitflags = "1.2.1"
 log = "0.4.11"
 acpi = "2.0.0"
-dashmap = { path = "../../dashmap", default-features = false, features = ["no_std"] }
 array-init = "0.1.1"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
-goblin = { version = "0.2.3", default-features = false }
 friendly = { git = "https://github.com/Restioson/friendly" }
+
+[dependencies.goblin]
+version = "0.2.3"
+default-features = false
+features = ["elf64", "elf32", "endian_fd"]
+
+[dependencies.dashmap]
+git = "https://github.com/Restioson/dashmap"
+branch = "no_std"
+default-features = false
+features = ["no_std"]
 
 [features]
 debug = []
