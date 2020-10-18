@@ -12,8 +12,15 @@ name = "libwolffia"
 version = "0.1.0"
 dependencies = [
  "libwolffia_macros",
+ "paste",
 ]
 
 [[package]]
 name = "libwolffia_macros"
 version = "0.1.0"
+
+[[package]]
+name = "paste"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0520af26d4cf99643dbbe093a61507922b57232d9978d8491fdc8f7b44573c8c"

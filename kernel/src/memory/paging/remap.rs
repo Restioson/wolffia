@@ -62,7 +62,7 @@ pub fn remap_kernel(boot_info: &BootInformation, heap_tree_start_virt: u64) {
         unsafe {
             // Map VGA buffer
             mapper.map_to(
-                Page::containing_address(crate::vga::VIRTUAL_VGA_PTR, PageSize::Kib4),
+                Page::containing_address(crate::vga::VIRTUAL_VGA_PTR),
                 PhysAddr::new(0xb8000),
                 // TODO(userspace): map to specific process
                 EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::USER_ACCESSIBLE,

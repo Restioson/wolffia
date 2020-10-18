@@ -11,10 +11,10 @@ lazy_static::lazy_static! {
     pub static ref GDT: Gdt = {
         let mut gdt = GlobalDescriptorTable::new();
 
+        let tss = TSS.wait().unwrap();
         let tss = gdt.add_entry(
-            unsafe {
-                Descriptor::tss_segment_with_iomap(&TSS.wait().unwrap().tss, 8193)
-            }
+            Descriptor::tss_segment_with_iomap(&tss.tss, unsafe { tss.iomap.as_slice() })
+                .unwrap()
         );
 
         let kernel_cs = gdt.add_entry(Descriptor::kernel_code_segment());

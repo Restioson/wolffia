@@ -6,7 +6,9 @@
     lang_items,
     panic_info_message,
     abi_x86_interrupt,
-    const_mut_refs
+    const_mut_refs,
+    step_trait,
+    step_trait_ext,
 )]
 #![no_std]
 
@@ -20,6 +22,7 @@ use core::fmt::Write;
 use spin::Mutex;
 use uart_16550::SerialPort;
 use crate::process::Process;
+use x86_64::registers::control::{Cr0, Cr0Flags, Cr4Flags, Cr4};
 
 mod lang;
 #[macro_use]
@@ -58,6 +61,9 @@ pub extern "C" fn kmain(mb_info_addr: u64, guard_page_addr: u64) -> ! {
     interrupts::enable();
     info!("interrupts: ready");
 
+    enable_features();
+    info!("cpu features: enabled");
+
     pit::CONTROLLER.lock().initialize();
     info!("pit: ready");
 
@@ -69,6 +75,19 @@ pub extern "C" fn kmain(mb_info_addr: u64, guard_page_addr: u64) -> ! {
     info!("init: launching");
 
     Process::run_by_pid(&pid);
+}
+
+fn enable_features() {
+    unsafe {
+        Cr0::update(|flags| {
+            flags.remove(Cr0Flags::EMULATE_COPROCESSOR);
+            *flags |= Cr0Flags::MONITOR_COPROCESSOR;
+        });
+
+        Cr4::update(|flags| {
+            *flags |= Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE;
+        });
+    }
 }
 
 /// # Safety

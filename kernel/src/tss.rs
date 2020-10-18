@@ -7,7 +7,8 @@ use x86_64::structures::tss::TaskStateSegment;
 
 pub static TSS: Once<Tss> = Once::new();
 
-#[repr(C)]
+// "avoid placing a page boundary in the first 104 bytes"
+#[repr(C, align(4096))]
 pub struct Tss {
     pub tss: TaskStateSegment,
     pub iomap: IopbLock,
@@ -109,6 +110,14 @@ impl IopbLock {
                 .try_lock()
                 .expect("IO permissions bitmap concurrently locked!"),
         }
+    }
+
+    /// # Safety
+    ///
+    /// Do not concurrently modify the io bitmap from elsewhere. It's fine if the CPU reads it.
+    pub unsafe fn as_slice(&self) -> &[u8] {
+        // SAFETY: repr(C) and enough provenance
+        core::slice::from_raw_parts(self as *const _ as *const _, 8193)
     }
 }
 

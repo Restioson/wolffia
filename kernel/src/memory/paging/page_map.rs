@@ -13,6 +13,7 @@ use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::structures::paging::PhysFrame;
 use x86_64::{PhysAddr, VirtAddr};
 use crate::process::STACK_BOTTOM;
+use crate::memory::LAST_USABLE_PAGE;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum FreeMemory {
@@ -207,7 +208,7 @@ impl Mapper {
         );
 
         for no in pages.start().number()..=pages.end().number() {
-            let page = Page::containing_address(no as u64 * 0x1000, PageSize::Kib4);
+            let page = Page::containing_address(no as u64 * 0x1000);
             self.map(page, flags, invplg, zero);
         }
     }
@@ -230,8 +231,8 @@ impl Mapper {
         let v_start = pages.start().start_address().unwrap();
         let v_end = pages.end().start_address().unwrap();
 
-        // Last addr + 1 is noncanonical which triggers syscall bug
-        if *pages.end() == Page::containing_address((1 << 47) - 1, PageSize::Kib4) {
+        // Page above last usable page's last addr + 1 = noncanonical, which creates syscall bug
+        if *pages.end() > LAST_USABLE_PAGE {
             trace!("v_end + 1 noncanonical");
             return Err(TryMapError::InvalidAddress(pages.end().clone()));
         }
@@ -251,13 +252,13 @@ impl Mapper {
         }
 
         // Program stack
-        let stack_bottom = Page::containing_address(STACK_BOTTOM.as_u64(), PageSize::Kib4);
-        if pages.end().number > stack_bottom.number {
+        let stack_bottom = Page::containing_address(STACK_BOTTOM.as_u64());
+        if *pages.end() > stack_bottom {
             return Err(TryMapError::InvalidAddress(pages.end().clone()));
         }
 
         for no in pages.start().number()..=pages.end().number() {
-            let page = Page::containing_address(no as u64 * 0x1000, PageSize::Kib4);
+            let page = Page::containing_address(no as u64 * 0x1000);
 
             if !ignore_already_mapped && self.walk_page_table(page).is_some() {
                 return Err(TryMapError::AlreadyMapped(page))
@@ -271,7 +272,7 @@ impl Mapper {
 
     pub unsafe fn set_flags(&mut self, pages: RangeInclusive<Page>, flags: EntryFlags, invplg: InvalidateTlb) {
         for no in pages.start().number()..=pages.end().number() {
-            let page = Page::containing_address(no as u64 * 0x1000, PageSize::Kib4);
+            let page = Page::containing_address(no as u64 * 0x1000);
 
             let paddr = self.walk_page_table(page).expect("Virtual address is not mapped!");
             self.map_to(page, paddr.0.physical_address().unwrap(), flags, invplg)
@@ -337,7 +338,7 @@ impl Mapper {
         for frame_no in (addresses.start() / 4096)..=(addresses.end() / 4096) {
             let addr = (frame_no * 4096) as u64;
             self.map_to(
-                Page::containing_address(addr, PageSize::Kib4),
+                Page::containing_address(addr),
                 PhysAddr::new(addr as u64),
                 flags,
                 invplg,
@@ -358,7 +359,7 @@ impl Mapper {
             let address = frame_no * 4096;
 
             self.map_to(
-                Page::containing_address(address, PageSize::Kib4),
+                Page::containing_address(address),
                 PhysAddr::new(address - crate::memory::KERNEL_MAPPING_BEGIN),
                 flags,
                 invplg,
@@ -380,7 +381,7 @@ impl Mapper {
             let virtual_address = page_no * 4096;
 
             self.map_to(
-                Page::containing_address(virtual_address, PageSize::Kib4),
+                Page::containing_address(virtual_address),
                 PhysAddr::new(phys_address as u64),
                 flags,
                 invplg,
@@ -426,7 +427,7 @@ impl TemporaryPage {
         // Allocate some heap memory for us to put the temporary page on (virtual addr)
         let layout = Layout::from_size_align(0x1000, 0x1000).unwrap();
         let page_addr = unsafe { crate::HEAP.alloc(layout) };
-        let page = Page::containing_address(page_addr as u64, PageSize::Kib4);
+        let page = Page::containing_address(page_addr as u64);
         let frame_addr = ACTIVE_PAGE_TABLES
             .lock()
             .walk_page_table(page)
@@ -577,7 +578,7 @@ impl ActivePageMap {
         let num_pages = pages.end() - pages.start();
         let mut frames = Vec::with_capacity(num_pages as usize);
         for i in 0..=num_pages {
-            let page = Page::containing_address((i + pages.start()) * 4096, PageSize::Kib4);
+            let page = Page::containing_address((i + pages.start()) * 4096);
 
             let entry = self.walk_page_table(page).unwrap().0;
             frames.push(entry.physical_address().unwrap());
@@ -585,7 +586,7 @@ impl ActivePageMap {
 
         self.with_inactive_p4(new_table, temporary_page, |mapper| {
             for page_no in pages.clone() {
-                let page = Page::containing_address(page_no * 4096, PageSize::Kib4);
+                let page = Page::containing_address(page_no * 4096);
                 let phys_addr = frames[page_no as usize - *pages.start() as usize];
 
                 unsafe {

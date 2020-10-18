@@ -6,3 +6,4 @@ edition = "2018"
 
 [dependencies]
 libwolffia_macros = { path = "libwolffia_macros" }
+paste = "1.0.1"

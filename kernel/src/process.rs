@@ -88,12 +88,12 @@ impl Process {
                 let vm_range = p_header.vm_range();
 
                 if vm_range.contains(&0) {
-                    let zpg = Page::containing_address(0, PageSize::Kib4);
+                    let zpg = Page::containing_address(0);
                     return Err(ElfLaunchError::InvalidPage(TryMapError::InvalidAddress(zpg)));
                 }
 
-                let page_start = Page::containing_address(vm_range.start as u64, PageSize::Kib4);
-                let page_end = Page::containing_address(vm_range.end as u64 - 1, PageSize::Kib4);
+                let page_start = Page::containing_address(vm_range.start as u64);
+                let page_end = Page::containing_address(vm_range.end as u64 - 1);
 
                 if !p_header.is_executable() {
                     flags |= EntryFlags::NO_EXECUTE;
@@ -215,8 +215,8 @@ impl Process {
     /// The page tables must have been switched to the process's AND the processor must be in ring0.
     unsafe fn setup(&mut self) {
         // Set up user stack
-        let stack_top = Page::containing_address(STACK_TOP.as_u64(), PageSize::Kib4);
-        let stack_bottom = Page::containing_address(STACK_BOTTOM.as_u64(), PageSize::Kib4);
+        let stack_top = Page::containing_address(STACK_TOP.as_u64());
+        let stack_bottom = Page::containing_address(STACK_BOTTOM.as_u64());
 
         ACTIVE_PAGE_TABLES.lock().map_range(
             stack_bottom..=stack_top,
@@ -231,8 +231,7 @@ impl Process {
 ///
 /// Expects to be in the page tables where instruction and stack pointer are loaded and valid.
 unsafe fn jump_usermode(stack_ptr: VirtAddr, instruction_ptr: VirtAddr) -> ! {
-    asm!(
-    "
+    asm!("
         mov ax, 0x2b
         mov ds, ax
         mov es, ax

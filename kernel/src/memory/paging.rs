@@ -12,6 +12,8 @@ use spin::Mutex;
 use x86_64::instructions::tlb;
 use x86_64::registers::control::Cr3;
 use x86_64::PhysAddr;
+use bitflags::_core::cmp::Ordering;
+use core::iter::Step;
 
 const PAGE_TABLE_ENTRIES: u64 = 512;
 pub static ACTIVE_PAGE_TABLES: Mutex<ActivePageMap> = Mutex::new(unsafe { ActivePageMap::new() });
@@ -25,7 +27,7 @@ pub enum PageSize {
 }
 
 impl PageSize {
-    fn bytes(self) -> u64 {
+    const fn bytes(self) -> u64 {
         use self::PageSize::*;
 
         match self {
@@ -37,9 +39,9 @@ impl PageSize {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Page {
-    number: usize,
+    pub(super) number: usize,
     /// Size of page. None when unknown.
-    size: Option<PageSize>,
+    pub(super) size: Option<PageSize>,
 }
 
 impl Page {
@@ -59,7 +61,7 @@ impl Page {
         self.number & 0o777
     }
 
-    pub fn number(&self) -> usize {
+    pub const fn number(&self) -> usize {
         self.number
     }
 
@@ -71,10 +73,11 @@ impl Page {
         self.size
     }
 
-    pub fn containing_address(addr: u64, size: PageSize) -> Page {
+    /// The 4kib page containing an address
+    pub const fn containing_address(addr: u64) -> Page {
         Page {
-            number: (addr / size.bytes()) as usize,
-            size: Some(size),
+            number: (addr / PageSize::Kib4.bytes()) as usize,
+            size: Some(PageSize::Kib4),
         }
     }
 }
@@ -97,6 +100,40 @@ impl Sub<usize> for Page {
         Page {
             number: self.number - other,
             size: self.size,
+        }
+    }
+}
+
+impl PartialOrd<Page> for Page {
+    fn partial_cmp(&self, other: &Page) -> Option<Ordering> {
+        self.number.partial_cmp(&other.number)
+    }
+}
+
+impl Ord for Page {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.number.cmp(&other.number)
+    }
+}
+
+unsafe impl Step for Page {
+    fn steps_between(start: &Page, end: &Page) -> Option<usize> {
+        usize::steps_between(&start.number, &end.number)
+    }
+
+    fn forward_checked(start: Self, count: usize) -> Option<Self> {
+        if start.number.checked_add(count).is_some() {
+            Some(start + count)
+        } else {
+            None
+        }
+    }
+
+    fn backward_checked(start: Self, count: usize) -> Option<Self> {
+        if start.number.checked_sub(count).is_some() {
+            Some(start - count)
+        } else {
+            None
         }
     }
 }

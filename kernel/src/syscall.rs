@@ -7,6 +7,8 @@ use x86_64::VirtAddr;
 use x86_64::registers::rflags::RFlags;
 use crate::halt;
 use crate::vga::VGA_WRITER;
+use crate::memory::buffer::BorrowedKernelBuffer;
+use core::ptr::NonNull;
 
 // TODO(SMP): use gs/swapgs
 /// SAFETY: always used from asm, one at a time.
@@ -91,8 +93,14 @@ pub extern fn syscall_callback() {
     }
 }
 
+#[repr(i64)]
+enum Error {
+    InvalidBuffer = -1,
+    InvalidUtf8 = -2,
+}
+
 #[no_mangle]
-pub extern "C" fn syscall_handler(id: u64, argv: *const u64, argc: u64) -> isize {
+pub extern "C" fn syscall_handler(id: u64, argv: *const u64, argc: u64) -> i64 {
     let syscall = Syscall::from_u64(id).unwrap();
     // SAFETY: this is correct (see asm above)
     let args: &[u64] = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
@@ -103,15 +111,24 @@ pub extern "C" fn syscall_handler(id: u64, argv: *const u64, argc: u64) -> isize
         },
         Syscall::Deadbeef => 0xdeadbeef,
         Syscall::Print => {
-            // TODO(syscall buffers): check this
-            let slice: &[u8] = unsafe {
-                core::slice::from_raw_parts(
-                    args[0] as *const u8,
-                    args[1] as usize
+            // SAFETY: we are in the user's page tables
+            let res = unsafe {
+                BorrowedKernelBuffer::try_from_user(
+                    NonNull::new(args[0] as *mut u8),
+                    args[1],
                 )
             };
 
-            let string = core::str::from_utf8(slice).unwrap();
+            let buf: BorrowedKernelBuffer<u8> = match res {
+                Ok(buf) => buf,
+                Err(_) => return Error::InvalidBuffer as i64,
+            };
+
+            let string = match core::str::from_utf8(buf.0) {
+                Ok(str) => str,
+                Err(_) => return Error::InvalidUtf8 as i64,
+            };
+
             VGA_WRITER.lock().write_str(string);
             0
         }
@@ -134,18 +151,4 @@ impl Syscall {
             _ => None,
         }
     }
-}
-
-pub extern "C" fn syscall_raw(call: Syscall) -> i64 {
-    let out: i64;
-    unsafe {
-        asm!("syscall",
-            in("rax") call as u64,
-            lateout("rax") out,
-            lateout("rcx") _,
-            lateout("r11") _,
-            options(nostack)
-        );
-    };
-    out
 }

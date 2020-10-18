@@ -21,6 +21,7 @@ pub mod heap;
 pub mod physical_allocator;
 pub mod physical_mapping;
 mod stack_allocator;
+pub mod buffer;
 
 use self::bootstrap_heap::{BootstrapHeap, BOOTSTRAP_HEAP};
 use self::paging::*;
@@ -42,6 +43,11 @@ use x86_64::{PhysAddr, VirtAddr};
 
 pub const KERNEL_MAPPING_BEGIN: u64 = 0xffffffff80000000;
 const IST_STACK_SIZE_PAGES: u64 = 4;
+const PAGE_BEFORE_NON_CANONICAL: Page = Page::containing_address((1 << 47) - 1);
+pub const LAST_USABLE_PAGE: Page = Page {
+    number: PAGE_BEFORE_NON_CANONICAL.number() - 1,
+    size: Some(PageSize::Kib4),
+};
 
 pub fn init_memory(mb_info_addr: u64, guard_page_addr: u64) {
     info!("mem: initialising");
@@ -89,7 +95,6 @@ pub fn init_memory(mb_info_addr: u64, guard_page_addr: u64) {
     debug!("mem: setting up ist");
     let page = Page::containing_address(
         (round_up_divide(heap_tree_end as u64, 4096) * 4096) as u64,
-        PageSize::Kib4,
     );
 
     unsafe { setup_ist(page) }
@@ -138,7 +143,6 @@ unsafe fn setup_ist(begin: Page) {
             ACTIVE_PAGE_TABLES.lock().map(
                 Page::containing_address(
                     begin.start_address().unwrap() + (page * 4096),
-                    PageSize::Kib4,
                 ),
                 EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
                 InvalidateTlb::Invalidate,
@@ -181,7 +185,7 @@ unsafe fn setup_bootstrap_heap(
         .add(start_ptr.align_offset(mem::align_of::<[Block; PhysicalTree::total_blocks()]>()))
         as u64;
 
-    let start_page = Page::containing_address(heap_start, PageSize::Kib4) + 1;
+    let start_page = Page::containing_address(heap_start) + 1;
     let start_frame = (physical_start.as_u64() / 4096) as u64 + 1;
 
     let mapping =
@@ -266,7 +270,7 @@ where
 unsafe fn setup_guard_page(addr: u64) {
     use self::paging::*;
 
-    let page = Page::containing_address(addr, PageSize::Kib4);
+    let page = Page::containing_address(addr);
 
     // Check it is a 4kib page
     let size = ACTIVE_PAGE_TABLES
