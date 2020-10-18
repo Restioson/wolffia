@@ -17,11 +17,11 @@
 #[macro_use]
 pub mod paging;
 pub mod bootstrap_heap;
+pub mod buffer;
 pub mod heap;
 pub mod physical_allocator;
 pub mod physical_mapping;
 mod stack_allocator;
-pub mod buffer;
 
 use self::bootstrap_heap::{BootstrapHeap, BOOTSTRAP_HEAP};
 use self::paging::*;
@@ -93,9 +93,8 @@ pub fn init_memory(mb_info_addr: u64, guard_page_addr: u64) {
     unsafe { setup_guard_page(guard_page_addr) };
 
     debug!("mem: setting up ist");
-    let page = Page::containing_address(
-        (round_up_divide(heap_tree_end as u64, 4096) * 4096) as u64,
-    );
+    let page =
+        Page::containing_address((round_up_divide(heap_tree_end as u64, 4096) * 4096) as u64);
 
     unsafe { setup_ist(page) }
 
@@ -141,9 +140,7 @@ unsafe fn setup_ist(begin: Page) {
             // Page is guard page: do not map
         } else {
             ACTIVE_PAGE_TABLES.lock().map(
-                Page::containing_address(
-                    begin.start_address().unwrap() + (page * 4096),
-                ),
+                Page::containing_address(begin.start_address().unwrap() + (page * 4096)),
                 EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
                 InvalidateTlb::Invalidate,
                 ZeroPage::Zero,

@@ -114,5 +114,8 @@ pub extern "x86-interrupt" fn virtualization(stack_frame: &mut InterruptStackFra
 }
 
 pub extern "x86-interrupt" fn security_exception(stack_frame: &mut InterruptStackFrame, code: u64) {
-    panic!("cpuex: security exception 0x{:x}\n{:#x?}", code, stack_frame);
+    panic!(
+        "cpuex: security exception 0x{:x}\n{:#x?}",
+        code, stack_frame
+    );
 }

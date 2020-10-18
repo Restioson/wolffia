@@ -5,17 +5,18 @@ use dashmap::DashMap;
 use crate::memory::physical_allocator::PHYSICAL_ALLOCATOR;
 use crate::tss::TSS;
 use alloc::vec::Vec;
-use core::ops::{RangeInclusive, Range};
+use core::ops::{Range, RangeInclusive};
+use core::slice;
+use goblin::elf::program_header::PT_LOAD;
+use goblin::elf::Elf;
 use x86_64::registers::control::Cr3;
 use x86_64::VirtAddr;
-use goblin::elf::Elf;
-use goblin::elf::program_header::PT_LOAD;
-use core::slice;
 
 // Top of lower half minus 1 but page aligned
 pub const STACK_TOP: VirtAddr = VirtAddr::new_truncate(0x7fffffffe000);
 pub const INITIAL_STACK_SIZE_PAGES: usize = 16; // 64kib stack
-pub const STACK_BOTTOM: VirtAddr = VirtAddr::new_truncate(STACK_TOP.as_u64() - INITIAL_STACK_SIZE_PAGES as u64);
+pub const STACK_BOTTOM: VirtAddr =
+    VirtAddr::new_truncate(STACK_TOP.as_u64() - INITIAL_STACK_SIZE_PAGES as u64);
 
 lazy_static::lazy_static! {
     pub static ref PROCESSES: DashMap<ProcessId, Process> = DashMap::default();
@@ -76,69 +77,70 @@ impl Process {
             return Err(ElfLaunchError::NotStaticallyLinked);
         }
 
-
         let page_tables = Self::new_process_page_tables();
-        let page_tables = ACTIVE_PAGE_TABLES.lock().with_inactive(page_tables, |tables| {
-            for p_header in &elf.program_headers {
-                if p_header.p_type != PT_LOAD {
-                    continue;
-                }
-
-                let mut flags = EntryFlags::USER_ACCESSIBLE;
-                let vm_range = p_header.vm_range();
-
-                if vm_range.contains(&0) {
-                    let zpg = Page::containing_address(0);
-                    return Err(ElfLaunchError::InvalidPage(TryMapError::InvalidAddress(zpg)));
-                }
-
-                let page_start = Page::containing_address(vm_range.start as u64);
-                let page_end = Page::containing_address(vm_range.end as u64 - 1);
-
-                if !p_header.is_executable() {
-                    flags |= EntryFlags::NO_EXECUTE;
-                }
-
-                if p_header.is_write() {
-                    flags |= EntryFlags::WRITABLE;
-                }
-
-                unsafe {
-                    tables
-                        .try_map_user_range(
-                            page_start..=page_end,
-                            EntryFlags::WRITABLE,
-                            InvalidateTlb::NoInvalidate,
-                            true, // ignore_already_mapped
-                            ZeroPage::NoZero,
-                        )
-                        .map_err(ElfLaunchError::InvalidPage)?;
-
-                    let src_slice = data.get(p_header.file_range())
-                        .ok_or(ElfLaunchError::InvalidHeaderRange(p_header.file_range()))?;
-
-                    // SAFETY: range is TrustedLen
-                    let dst_slice = slice::from_raw_parts_mut(
-                        vm_range.start as *mut u8,
-                        vm_range.len()
-                    );
-
-                    if dst_slice.len() != src_slice.len() {
-                        return Err(ElfLaunchError::InvalidHeaderRange(p_header.file_range()));
+        let page_tables = ACTIVE_PAGE_TABLES
+            .lock()
+            .with_inactive(page_tables, |tables| {
+                for p_header in &elf.program_headers {
+                    if p_header.p_type != PT_LOAD {
+                        continue;
                     }
 
-                    dst_slice.copy_from_slice(src_slice);
+                    let mut flags = EntryFlags::USER_ACCESSIBLE;
+                    let vm_range = p_header.vm_range();
 
-                    tables.set_flags(page_start..=page_end, flags, InvalidateTlb::NoInvalidate);
+                    if vm_range.contains(&0) {
+                        let zpg = Page::containing_address(0);
+                        return Err(ElfLaunchError::InvalidPage(TryMapError::InvalidAddress(
+                            zpg,
+                        )));
+                    }
+
+                    let page_start = Page::containing_address(vm_range.start as u64);
+                    let page_end = Page::containing_address(vm_range.end as u64 - 1);
+
+                    if !p_header.is_executable() {
+                        flags |= EntryFlags::NO_EXECUTE;
+                    }
+
+                    if p_header.is_write() {
+                        flags |= EntryFlags::WRITABLE;
+                    }
+
+                    unsafe {
+                        tables
+                            .try_map_user_range(
+                                page_start..=page_end,
+                                EntryFlags::WRITABLE,
+                                InvalidateTlb::NoInvalidate,
+                                true, // ignore_already_mapped
+                                ZeroPage::NoZero,
+                            )
+                            .map_err(ElfLaunchError::InvalidPage)?;
+
+                        let src_slice = data
+                            .get(p_header.file_range())
+                            .ok_or(ElfLaunchError::InvalidHeaderRange(p_header.file_range()))?;
+
+                        // SAFETY: range is TrustedLen
+                        let dst_slice =
+                            slice::from_raw_parts_mut(vm_range.start as *mut u8, vm_range.len());
+
+                        if dst_slice.len() != src_slice.len() {
+                            return Err(ElfLaunchError::InvalidHeaderRange(p_header.file_range()));
+                        }
+
+                        dst_slice.copy_from_slice(src_slice);
+
+                        tables.set_flags(page_start..=page_end, flags, InvalidateTlb::NoInvalidate);
+                    }
                 }
-            }
 
-            Ok(())
-        })?;
+                Ok(())
+            })?;
 
-
-        // Kernel space... no.
-        if elf.entry >> 63 == 1 {
+        // Kernel space or non canonical address... no.
+        if elf.entry >> 63 == 1 || VirtAddr::try_new(elf.entry).is_err() {
             return Err(ElfLaunchError::InvalidEntryPoint(elf.entry));
         }
 

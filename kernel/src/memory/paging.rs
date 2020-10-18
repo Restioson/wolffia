@@ -6,14 +6,14 @@ pub mod remap;
 pub use self::page_map::*;
 
 use super::physical_allocator::PHYSICAL_ALLOCATOR;
+use bitflags::_core::cmp::Ordering;
+use core::iter::Step;
 use core::marker::PhantomData;
 use core::ops::{Add, Index, IndexMut, Sub};
 use spin::Mutex;
 use x86_64::instructions::tlb;
 use x86_64::registers::control::Cr3;
 use x86_64::PhysAddr;
-use bitflags::_core::cmp::Ordering;
-use core::iter::Step;
 
 const PAGE_TABLE_ENTRIES: u64 = 512;
 pub static ACTIVE_PAGE_TABLES: Mutex<ActivePageMap> = Mutex::new(unsafe { ActivePageMap::new() });

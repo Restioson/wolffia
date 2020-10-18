@@ -2,6 +2,8 @@
 // Many thanks!
 
 use super::*;
+use crate::memory::LAST_USABLE_PAGE;
+use crate::process::STACK_BOTTOM;
 use crate::util::round_up_divide;
 use alloc::vec::Vec;
 use core::alloc::{GlobalAlloc, Layout};
@@ -12,8 +14,6 @@ use core::ptr::NonNull;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::structures::paging::PhysFrame;
 use x86_64::{PhysAddr, VirtAddr};
-use crate::process::STACK_BOTTOM;
-use crate::memory::LAST_USABLE_PAGE;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum FreeMemory {
@@ -239,16 +239,16 @@ impl Mapper {
 
         // Noncanonical address
         if VirtAddr::try_new(v_end).is_err() {
-            return Err(TryMapError::InvalidAddress(pages.end().clone()))
+            return Err(TryMapError::InvalidAddress(pages.end().clone()));
         } else if VirtAddr::try_new(v_start).is_err() {
-            return Err(TryMapError::InvalidAddress(pages.start().clone()))
+            return Err(TryMapError::InvalidAddress(pages.start().clone()));
         }
 
         // Kernel memory (higher half)
         if v_end >> 63 == 1 {
             return Err(TryMapError::InvalidAddress(pages.end().clone()));
         } else if v_start >> 63 == 1 {
-            return Err(TryMapError::InvalidAddress(pages.start().clone()))
+            return Err(TryMapError::InvalidAddress(pages.start().clone()));
         }
 
         // Program stack
@@ -261,7 +261,7 @@ impl Mapper {
             let page = Page::containing_address(no as u64 * 0x1000);
 
             if !ignore_already_mapped && self.walk_page_table(page).is_some() {
-                return Err(TryMapError::AlreadyMapped(page))
+                return Err(TryMapError::AlreadyMapped(page));
             }
 
             self.map(page, flags, invplg, zero);
@@ -270,11 +270,18 @@ impl Mapper {
         Ok(())
     }
 
-    pub unsafe fn set_flags(&mut self, pages: RangeInclusive<Page>, flags: EntryFlags, invplg: InvalidateTlb) {
+    pub unsafe fn set_flags(
+        &mut self,
+        pages: RangeInclusive<Page>,
+        flags: EntryFlags,
+        invplg: InvalidateTlb,
+    ) {
         for no in pages.start().number()..=pages.end().number() {
             let page = Page::containing_address(no as u64 * 0x1000);
 
-            let paddr = self.walk_page_table(page).expect("Virtual address is not mapped!");
+            let paddr = self
+                .walk_page_table(page)
+                .expect("Virtual address is not mapped!");
             self.map_to(page, paddr.0.physical_address().unwrap(), flags, invplg)
         }
     }
@@ -596,8 +603,13 @@ impl ActivePageMap {
         });
     }
 
-    pub fn with_inactive<F, E>(&mut self, new_table: InactivePageMap, f: F) -> Result<InactivePageMap, E>
-        where F: FnOnce(&mut ActivePageMap) -> Result<(), E>
+    pub fn with_inactive<F, E>(
+        &mut self,
+        new_table: InactivePageMap,
+        f: F,
+    ) -> Result<InactivePageMap, E>
+    where
+        F: FnOnce(&mut ActivePageMap) -> Result<(), E>,
     {
         let old = self.switch(new_table);
         let res = f(self);

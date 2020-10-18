@@ -1,14 +1,14 @@
 use crate::gdt::GDT;
-use core::cell::UnsafeCell;
 use crate::tss::TSS;
-use x86_64::registers::model_specific::{EferFlags, Efer, LStar, Star, SFMask};
+use core::cell::UnsafeCell;
+use x86_64::registers::model_specific::{Efer, EferFlags, LStar, SFMask, Star};
 
-use x86_64::VirtAddr;
-use x86_64::registers::rflags::RFlags;
 use crate::halt;
-use crate::vga::VGA_WRITER;
 use crate::memory::buffer::BorrowedKernelBuffer;
+use crate::vga::VGA_WRITER;
 use core::ptr::NonNull;
+use x86_64::registers::rflags::RFlags;
+use x86_64::VirtAddr;
 
 // TODO(SMP): use gs/swapgs
 /// SAFETY: always used from asm, one at a time.
@@ -40,8 +40,9 @@ pub unsafe fn setup_syscall() {
         selectors.user_cs,
         selectors.user_ds,
         selectors.kernel_cs,
-        selectors.kernel_ds
-    ).unwrap();
+        selectors.kernel_ds,
+    )
+    .unwrap();
 
     // Ignore interrupts on syscall
     SFMask::write(RFlags::INTERRUPT_FLAG);
@@ -54,10 +55,11 @@ pub unsafe fn setup_syscall() {
 /// clobbered. The system call number is passed in `rax`, and the return is from `rax` too.
 #[naked]
 #[no_mangle]
-pub extern fn syscall_callback() {
+pub extern "C" fn syscall_callback() {
     unsafe {
         // TODO Restore user's FS
-        asm!("
+        asm!(
+            "
             mov [USER_RSP], rsp // Save RSP
             mov rsp, SYSCALL_STACK
 
@@ -108,15 +110,12 @@ pub extern "C" fn syscall_handler(id: u64, argv: *const u64, argc: u64) -> i64 {
         Syscall::Halt => {
             info!("Got system call halt");
             unsafe { halt() }
-        },
+        }
         Syscall::Deadbeef => 0xdeadbeef,
         Syscall::Print => {
             // SAFETY: we are in the user's page tables
             let res = unsafe {
-                BorrowedKernelBuffer::try_from_user(
-                    NonNull::new(args[0] as *mut u8),
-                    args[1],
-                )
+                BorrowedKernelBuffer::try_from_user(NonNull::new(args[0] as *mut u8), args[1])
             };
 
             let buf: BorrowedKernelBuffer<u8> = match res {

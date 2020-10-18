@@ -8,7 +8,7 @@
     abi_x86_interrupt,
     const_mut_refs,
     step_trait,
-    step_trait_ext,
+    step_trait_ext
 )]
 #![no_std]
 
@@ -16,13 +16,13 @@
 extern crate alloc;
 
 use crate::memory::heap::Heap;
+use crate::process::Process;
 use crate::vga::VGA_WRITER;
 use core::fmt;
 use core::fmt::Write;
 use spin::Mutex;
 use uart_16550::SerialPort;
-use crate::process::Process;
-use x86_64::registers::control::{Cr0, Cr0Flags, Cr4Flags, Cr4};
+use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
 mod lang;
 #[macro_use]
@@ -36,9 +36,9 @@ mod gdt;
 mod interrupts;
 mod memory;
 mod pit;
-mod tss;
-mod syscall;
 pub mod process;
+mod syscall;
+mod tss;
 
 #[global_allocator]
 pub static HEAP: Heap = Heap::new();
@@ -71,7 +71,9 @@ pub extern "C" fn kmain(mb_info_addr: u64, guard_page_addr: u64) -> ! {
     unsafe { syscall::setup_syscall() };
 
     info!("init: loading");
-    let pid = Process::spawn_from_elf(INIT_ELF).map_err(|e| panic!("{:#x?}", e)).unwrap();
+    let pid = Process::spawn_from_elf(INIT_ELF)
+        .map_err(|e| panic!("{:#x?}", e))
+        .unwrap();
     info!("init: launching");
 
     Process::run_by_pid(&pid);
