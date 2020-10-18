@@ -27,6 +27,8 @@ pub fn remap_kernel(boot_info: &BootInformation, heap_tree_start_virt: u64) {
             .elf_sections_tag()
             .expect("Memory map tag required");
 
+        mapper.p4_mut()[511].add_flags(EntryFlags::GLOBAL);
+
         // Map kernel sections
         for section in elf_sections_tag.sections() {
             if !section.is_allocated() {
@@ -40,7 +42,7 @@ pub fn remap_kernel(boot_info: &BootInformation, heap_tree_start_virt: u64) {
                 section.name(),
             );
 
-            let mut flags = EntryFlags::USER_ACCESSIBLE; // TODO(userspace)
+            let mut flags = EntryFlags::GLOBAL;
 
             if section.flags().contains(ElfSectionFlags::WRITABLE) {
                 flags |= EntryFlags::WRITABLE;
@@ -64,7 +66,7 @@ pub fn remap_kernel(boot_info: &BootInformation, heap_tree_start_virt: u64) {
             mapper.map_to(
                 Page::containing_address(crate::vga::VIRTUAL_VGA_PTR),
                 PhysAddr::new(0xb8000),
-                // TODO(userspace): map to specific process
+                // TODO(permissions): map to specific process
                 EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::USER_ACCESSIBLE,
                 InvalidateTlb::NoInvalidate,
             );
@@ -80,8 +82,7 @@ pub fn remap_kernel(boot_info: &BootInformation, heap_tree_start_virt: u64) {
         &mut new_table,
         &mut temporary_page,
         bootstrap_heap_page_range,
-        // TODO(userspace)
-        EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
+        EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::GLOBAL,
     );
 
     // Map heap
@@ -94,8 +95,7 @@ pub fn remap_kernel(boot_info: &BootInformation, heap_tree_start_virt: u64) {
         &mut new_table,
         &mut temporary_page,
         heap_tree_page_range,
-        // TODO(userspace)
-        EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE,
+        EntryFlags::NO_EXECUTE | EntryFlags::WRITABLE | EntryFlags::GLOBAL,
     );
 
     trace!("mem: switching page tables");

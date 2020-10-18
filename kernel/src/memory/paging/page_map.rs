@@ -67,7 +67,7 @@ impl Mapper {
         unsafe { self.p4.as_ref() }
     }
 
-    fn p4_mut(&mut self) -> &mut PageTable<Level4> {
+    pub fn p4_mut(&mut self) -> &mut PageTable<Level4> {
         unsafe { self.p4.as_mut() }
     }
 
@@ -193,7 +193,6 @@ impl Mapper {
     }
 
     /// Maps a range of pages, allocating physical memory for them
-    // TODO use this more widely
     pub unsafe fn map_range(
         &mut self,
         pages: RangeInclusive<Page>,
@@ -546,7 +545,7 @@ impl ActivePageMap {
                 EntryFlags::PRESENT
                     | EntryFlags::WRITABLE
                     | EntryFlags::NO_EXECUTE
-                    | EntryFlags::USER_ACCESSIBLE,
+                    | EntryFlags::GLOBAL
             );
 
             tlb::flush_all();
@@ -560,7 +559,7 @@ impl ActivePageMap {
                 EntryFlags::PRESENT
                     | EntryFlags::WRITABLE
                     | EntryFlags::NO_EXECUTE
-                    | EntryFlags::USER_ACCESSIBLE,
+                    | EntryFlags::GLOBAL
             );
 
             tlb::flush_all();
@@ -680,7 +679,7 @@ impl InactivePageMap {
                 EntryFlags::PRESENT
                     | EntryFlags::WRITABLE
                     | EntryFlags::NO_EXECUTE
-                    | EntryFlags::USER_ACCESSIBLE, // TODO(userspace0
+                    | EntryFlags::GLOBAL,
             );
         }
 

@@ -160,6 +160,10 @@ impl PageTableEntry {
         }
     }
 
+    pub fn add_flags(&mut self, flags: EntryFlags) {
+        self.0 |= flags.bits();
+    }
+
     pub fn set(&mut self, physical_address: PhysAddr, flags: EntryFlags) {
         // Check that the physical address is page aligned
         assert_eq!(
@@ -211,7 +215,7 @@ bitflags::bitflags! {
         /// Whether this page is a huge page. 0 in P1 and P4, but sets this as a 1GiB page in P3
         /// and a 2MiB page in P2
         const HUGE_PAGE = 1 << 7;
-        /// If set, this page will not be flushed in the TLB. PGE bit in CR4 must be set.
+        /// If set, this page will not be flushed in the TLB if CR3 is reset. PGE bit in CR4 must be set.
         const GLOBAL = 1 << 8; // TODO(userspace): map kernel pages as global?
         /// Do not allow executing code from this page. NXE bit in EFER must be set.
         const NO_EXECUTE = 1 << 63;
@@ -319,7 +323,7 @@ impl<L: TableLevel> PageTable<L> {
                     frame.start_address(),
                     self::EntryFlags::PRESENT
                         | self::EntryFlags::WRITABLE
-                        | self::EntryFlags::USER_ACCESSIBLE, // TODO(userspace)
+                        | self::EntryFlags::USER_ACCESSIBLE,
                 );
                 self.next_page_table_mut(index)
                     .expect("No next table!")

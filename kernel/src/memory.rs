@@ -141,7 +141,7 @@ unsafe fn setup_ist(begin: Page) {
         } else {
             ACTIVE_PAGE_TABLES.lock().map(
                 Page::containing_address(begin.start_address().unwrap() + (page * 4096)),
-                EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+                EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
                 InvalidateTlb::Invalidate,
                 ZeroPage::Zero,
             );
@@ -191,7 +191,7 @@ unsafe fn setup_bootstrap_heap(
     ACTIVE_PAGE_TABLES.lock().map_page_range(
         mapping,
         InvalidateTlb::NoInvalidate,
-        EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+        EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
     );
 
     let virtual_start = start_page.number() as u64 * 4096;

@@ -42,8 +42,7 @@ impl Heap {
 
             ACTIVE_PAGE_TABLES.lock().map_range(
                 page_start..=page_end,
-                // TODO(userspace): move userspace out of kernel bin
-                EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE | EntryFlags::NO_EXECUTE,
+                EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
                 InvalidateTlb::Invalidate,
                 ZeroPage::Zero,
             );
@@ -96,7 +95,7 @@ impl Heap {
             ACTIVE_PAGE_TABLES.lock().map_to(
                 Page::containing_address(page_addr),
                 PhysAddr::new((physical_begin_frame + page) * 4096),
-                EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+                EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
                 InvalidateTlb::Invalidate,
             );
         }
@@ -182,7 +181,7 @@ unsafe impl GlobalAlloc for Heap {
             if !mapped {
                 page_tables.map(
                     Page::containing_address(page_addr),
-                    EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+                    EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
                     InvalidateTlb::NoInvalidate,
                     ZeroPage::Zero,
                 );

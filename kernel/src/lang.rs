@@ -44,6 +44,7 @@ fn panic_fmt(info: &PanicInfo) -> ! {
             "Panicked at \"{}\" at an undefined location",
             arguments
         );
+
         let _ = write!(
             &mut serial,
             "Panicked at \"{}\" at an undefined location",
@@ -51,8 +52,7 @@ fn panic_fmt(info: &PanicInfo) -> ! {
         );
     }
 
-    // TODO(userspace) this overwrites panic messages with GPF
-    unsafe { halt() }
+    halt()
 }
 
 #[alloc_error_handler]

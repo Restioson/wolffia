@@ -30,7 +30,7 @@ pub mod prelude {
 fn eh_personality() {}
 
 #[panic_handler]
-// TODO backtrace
+// TODO(userspace heap): backtrace
 fn panic_fmt(info: &PanicInfo) -> ! {
     let arguments = match info.message() {
         Some(args) => *args,

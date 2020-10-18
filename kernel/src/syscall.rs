@@ -48,7 +48,6 @@ pub unsafe fn setup_syscall() {
     SFMask::write(RFlags::INTERRUPT_FLAG);
 }
 
-// TODO noncanonical rip/rcx https://fuchsia.dev/fuchsia-src/concepts/kernel/sysret_problem
 /// # Syscall ABI
 ///
 /// Modified cdecl. Arguments are passed in `rdi, rsi, rdx, rcx, r8, r9`. `rcx` and `r11` are
@@ -109,7 +108,7 @@ pub extern "C" fn syscall_handler(id: u64, argv: *const u64, argc: u64) -> i64 {
     match syscall {
         Syscall::Halt => {
             info!("Got system call halt");
-            unsafe { halt() }
+            halt()
         }
         Syscall::Deadbeef => 0xdeadbeef,
         Syscall::Print => {
@@ -129,6 +128,7 @@ pub extern "C" fn syscall_handler(id: u64, argv: *const u64, argc: u64) -> i64 {
             };
 
             VGA_WRITER.lock().write_str(string);
+
             0
         }
     }

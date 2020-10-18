@@ -92,16 +92,12 @@ fn enable_features() {
     }
 }
 
-/// # Safety
-///
-/// Must be inside of the kernel, else this will throw a GPF.
-// TODO(userspace): unsafe can be removed when no userspace is in the kernel binary
-unsafe fn halt() -> ! {
+fn halt() -> ! {
     // Disable interrupts
-    asm!("cli");
+    unsafe { asm!("cli"); }
 
     // Halt forever...
     loop {
-        asm!("hlt");
+        unsafe { asm!("hlt"); }
     }
 }
