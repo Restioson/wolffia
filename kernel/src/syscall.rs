@@ -5,7 +5,9 @@ use x86_64::registers::model_specific::{Efer, EferFlags, LStar, SFMask, Star};
 
 use crate::halt;
 use crate::memory::buffer::BorrowedKernelBuffer;
+use crate::memory::paging::{EntryFlags, InvalidateTlb, Page, ZeroPage, ACTIVE_PAGE_TABLES};
 use crate::vga::VGA_WRITER;
+use core::convert::TryInto;
 use core::ptr::NonNull;
 use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
@@ -98,6 +100,32 @@ pub extern "C" fn syscall_callback() {
 enum Error {
     InvalidBuffer = -1,
     InvalidUtf8 = -2,
+    InvalidPage = -3,
+    InvalidPagesLength = -4,
+    OutOfMemory = -5,
+}
+
+bitflags::bitflags! {
+     pub struct UserPageFlags: u64 {
+        const WRITABLE = 1;
+        const EXECUTABLE = 1 << 1;
+     }
+}
+
+impl From<UserPageFlags> for EntryFlags {
+    fn from(user: UserPageFlags) -> Self {
+        let mut flags = EntryFlags::PRESENT | EntryFlags::USER_ACCESSIBLE;
+
+        if user.contains(UserPageFlags::WRITABLE) {
+            flags |= EntryFlags::WRITABLE;
+        }
+
+        if !user.contains(UserPageFlags::EXECUTABLE) {
+            flags |= EntryFlags::NO_EXECUTE;
+        }
+
+        flags
+    }
 }
 
 #[no_mangle]
@@ -110,7 +138,48 @@ pub extern "C" fn syscall_handler(id: u64, argv: *const u64, argc: u64) -> i64 {
             info!("Got system call halt");
             halt()
         }
-        Syscall::Deadbeef => 0xdeadbeef,
+        Syscall::Map => {
+            let [addr_begin, len, flags]: [u64; 3] = args[0..3].try_into().unwrap();
+
+            if addr_begin & 0xfff != 0 {
+                return Error::InvalidPage as i64;
+            }
+
+            if len == 0 {
+                return Error::InvalidPagesLength as i64;
+            }
+
+            let page_begin = Page::containing_address(addr_begin);
+            let page_end = page_begin + (len - 1) as usize;
+            let flags = UserPageFlags::from_bits_truncate(flags).into();
+            let mut tables = ACTIVE_PAGE_TABLES.lock();
+
+            // SAFETY: we are in the user's page tables
+            let res = unsafe {
+                tables.try_map_user_range(
+                    page_begin..=page_end,
+                    flags,
+                    InvalidateTlb::Invalidate,
+                    false,
+                    ZeroPage::Zero,
+                )
+            };
+
+            res.map(|_| 0).unwrap_or(Error::InvalidPage as i64)
+        }
+        Syscall::Unmap => {
+            let [addr_begin, len]: [u64; 2] = args[0..2].try_into().unwrap();
+
+            if addr_begin & 0xfff != 0 {
+                return Error::InvalidPage as i64;
+            }
+
+            if len == 0 {
+                return Error::InvalidPagesLength as i64;
+            }
+
+            todo!()
+        }
         Syscall::Print => {
             // SAFETY: we are in the user's page tables
             let res = unsafe {
@@ -137,16 +206,18 @@ pub extern "C" fn syscall_handler(id: u64, argv: *const u64, argc: u64) -> i64 {
 #[repr(u64)]
 pub enum Syscall {
     Halt = 0,
-    Deadbeef = 1,
-    Print = 2,
+    Map = 1,
+    Unmap = 2,
+    Print = 3,
 }
 
 impl Syscall {
     fn from_u64(v: u64) -> Option<Syscall> {
         match v {
             0 => Some(Syscall::Halt),
-            1 => Some(Syscall::Deadbeef),
-            2 => Some(Syscall::Print),
+            1 => Some(Syscall::Map),
+            2 => Some(Syscall::Unmap),
+            3 => Some(Syscall::Print),
             _ => None,
         }
     }

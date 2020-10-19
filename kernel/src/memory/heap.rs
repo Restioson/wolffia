@@ -40,12 +40,15 @@ impl Heap {
             let page_start = Page::containing_address(heap_tree_start);
             let page_end = page_start + tree_size_pages;
 
-            ACTIVE_PAGE_TABLES.lock().map_range(
-                page_start..=page_end,
-                EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
-                InvalidateTlb::Invalidate,
-                ZeroPage::Zero,
-            );
+            ACTIVE_PAGE_TABLES
+                .lock()
+                .map_range(
+                    page_start..=page_end,
+                    EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
+                    InvalidateTlb::Invalidate,
+                    ZeroPage::Zero,
+                )
+                .expect("Out of physical memory");
 
             let tree = HeapTree::new(
                 iter::once(0..(1 << (30 + 1))),
@@ -90,14 +93,27 @@ impl Heap {
         let ptr = (ptr.unwrap() as u64 + HEAP_START) as *mut u8;
 
         // Map pages that must be mapped
+        let mut page_tables = ACTIVE_PAGE_TABLES.lock();
+        let begin_page = Page::containing_address(ptr as u64);
+
         for page in 0..util::round_up_divide(1u64 << (order + BASE_ORDER), 4096) as u64 {
-            let page_addr = ptr as u64 + (page * 4096);
-            ACTIVE_PAGE_TABLES.lock().map_to(
-                Page::containing_address(page_addr),
-                PhysAddr::new((physical_begin_frame + page) * 4096),
+            let page_no = page;
+            let page = Page::containing_address(ptr as u64 + (page * 4096));
+            let res = page_tables.map_to(
+                page,
+                PhysAddr::new((physical_begin_frame + page_no) * 4096),
                 EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
                 InvalidateTlb::Invalidate,
             );
+
+            if res.is_err() {
+                page_tables.unmap_range(
+                    begin_page..=page,
+                    FreeMemory::Free,
+                    InvalidateTlb::Invalidate,
+                );
+                return ptr::null_mut();
+            }
         }
 
         ptr
@@ -168,23 +184,30 @@ unsafe impl GlobalAlloc for Heap {
         }
         let ptr = (ptr.unwrap() as u64 + HEAP_START) as *mut u8;
 
+        let begin_page = Page::containing_address(ptr as u64);
         // Map pages that have yet to be mapped
         for page in 0..util::round_up_divide(1u64 << (order + BASE_ORDER - 1), 4096) as u64 {
             let mut page_tables = ACTIVE_PAGE_TABLES.lock();
+            let page = Page::containing_address(ptr as u64 + (page * 4096));
 
-            let page_addr = ptr as u64 + (page * 4096);
-
-            let mapped = page_tables
-                .walk_page_table(Page::containing_address(page_addr))
-                .is_some();
+            let mapped = page_tables.walk_page_table(page).is_some();
 
             if !mapped {
-                page_tables.map(
-                    Page::containing_address(page_addr),
+                let res = page_tables.map(
+                    page,
                     EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
                     InvalidateTlb::NoInvalidate,
                     ZeroPage::Zero,
                 );
+
+                if res.is_err() {
+                    page_tables.unmap_range(
+                        begin_page..=page,
+                        FreeMemory::Free,
+                        InvalidateTlb::Invalidate,
+                    );
+                    return ptr::null_mut();
+                }
             }
         }
         ptr

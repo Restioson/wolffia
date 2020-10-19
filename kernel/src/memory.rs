@@ -139,12 +139,15 @@ unsafe fn setup_ist(begin: Page) {
         if page % IST_STACK_SIZE_PAGES == 0 {
             // Page is guard page: do not map
         } else {
-            ACTIVE_PAGE_TABLES.lock().map(
-                Page::containing_address(begin.start_address().unwrap() + (page * 4096)),
-                EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
-                InvalidateTlb::Invalidate,
-                ZeroPage::Zero,
-            );
+            ACTIVE_PAGE_TABLES
+                .lock()
+                .map(
+                    Page::containing_address(begin.start_address().unwrap() + (page * 4096)),
+                    EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
+                    InvalidateTlb::Invalidate,
+                    ZeroPage::Zero,
+                )
+                .expect("Out of physical memory");
         }
     }
 
@@ -188,11 +191,14 @@ unsafe fn setup_bootstrap_heap(
     let mapping =
         PageRangeMapping::new(start_page, start_frame, BootstrapHeap::space_taken() / 4096);
 
-    ACTIVE_PAGE_TABLES.lock().map_page_range(
-        mapping,
-        InvalidateTlb::NoInvalidate,
-        EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
-    );
+    ACTIVE_PAGE_TABLES
+        .lock()
+        .map_page_range(
+            mapping,
+            InvalidateTlb::NoInvalidate,
+            EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::GLOBAL,
+        )
+        .expect("Out of physical memory for page tables");
 
     let virtual_start = start_page.number() as u64 * 4096;
 

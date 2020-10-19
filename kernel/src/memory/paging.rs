@@ -304,7 +304,10 @@ impl<L: TableLevel> PageTable<L> {
         }
     }
 
-    pub fn next_table_create(&mut self, index: usize) -> Option<&mut PageTable<L::NextLevel>>
+    pub fn next_table_create(
+        &mut self,
+        index: usize,
+    ) -> Option<Result<&mut PageTable<L::NextLevel>, OutOfMemory>>
     where
         L: HierarchicalLevel,
     {
@@ -315,9 +318,10 @@ impl<L: TableLevel> PageTable<L> {
             {
                 assert!(L::CAN_BE_HUGE, "Page has huge bit but cannot be huge!");
             } else {
-                let frame = PHYSICAL_ALLOCATOR
-                    .allocate(0)
-                    .expect("No physical frames available!");
+                let frame = match PHYSICAL_ALLOCATOR.allocate(0) {
+                    Some(frame) => frame,
+                    None => return Some(Err(OutOfMemory)),
+                };
 
                 self.entries[index].set(
                     frame.start_address(),
@@ -331,7 +335,7 @@ impl<L: TableLevel> PageTable<L> {
             }
         }
 
-        self.next_page_table_mut(index)
+        self.next_page_table_mut(index).map(Ok)
     }
 }
 

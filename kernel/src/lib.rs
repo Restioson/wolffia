@@ -8,7 +8,8 @@
     abi_x86_interrupt,
     const_mut_refs,
     step_trait,
-    step_trait_ext
+    step_trait_ext,
+    never_type
 )]
 #![no_std]
 
@@ -76,7 +77,7 @@ pub extern "C" fn kmain(mb_info_addr: u64, guard_page_addr: u64) -> ! {
         .unwrap();
     info!("init: launching");
 
-    Process::run_by_pid(&pid);
+    Process::run_by_pid(&pid).expect("Out of physical memory")
 }
 
 fn enable_features() {
@@ -94,10 +95,14 @@ fn enable_features() {
 
 fn halt() -> ! {
     // Disable interrupts
-    unsafe { asm!("cli"); }
+    unsafe {
+        asm!("cli");
+    }
 
     // Halt forever...
     loop {
-        unsafe { asm!("hlt"); }
+        unsafe {
+            asm!("hlt");
+        }
     }
 }

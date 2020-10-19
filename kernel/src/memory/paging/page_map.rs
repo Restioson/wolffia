@@ -37,6 +37,16 @@ pub enum ZeroPage {
 pub enum TryMapError {
     InvalidAddress(Page),
     AlreadyMapped(Page),
+    OutOfMemory,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct OutOfMemory;
+
+impl From<OutOfMemory> for TryMapError {
+    fn from(_: OutOfMemory) -> Self {
+        TryMapError::OutOfMemory
+    }
 }
 
 pub struct Mapper {
@@ -53,9 +63,10 @@ impl Mapper {
     /// Must be unique.
     const unsafe fn new() -> Self {
         #[allow(clippy::inconsistent_digit_grouping)] // It's specifically laid out
-                                                      // The address points to the recursively mapped entry (511) in the P4 table, which we can
-                                                      // use to access the P4 table itself.
-                                                      //                sign ext  p4  p3  p2  p1  offset
+
+        // The address points to the recursively mapped entry (511) in the P4 table, which we can
+        // use to access the P4 table itself.
+        //               sign ext p4  p3  p2  p1  offset
         const P4: u64 = 0o177_777_776_776_776_776_0000;
 
         Mapper {
@@ -127,19 +138,19 @@ impl Mapper {
         physical_address: PhysAddr,
         flags: EntryFlags,
         invplg: InvalidateTlb,
-    ) {
+    ) -> Result<(), OutOfMemory> {
         let p2 = self
             .p4_mut()
             .next_table_create(page.p4_index())
-            .expect("No next p3 table!")
+            .expect("No next p3 table!")?
             .next_table_create(page.p3_index())
-            .expect("No next p2 table!");
+            .expect("No next p2 table!")?;
 
         assert!(page.size.is_some(), "Page to map requires size!");
 
         if page.size.unwrap() == PageSize::Kib4 {
             let p1 = match p2.next_table_create(page.p2_index()) {
-                Some(p1) => p1,
+                Some(p1) => p1?,
                 None => {
                     if p2[page.p2_index()].flags().contains(EntryFlags::HUGE_PAGE) {
                         panic!("No next p1 table - the area is mapped in 2mib pages")
@@ -158,6 +169,8 @@ impl Mapper {
         } else {
             panic!("2mib pages are only partially supported!");
         }
+
+        Ok(())
     }
 
     /// # Safety notes
@@ -169,7 +182,7 @@ impl Mapper {
         flags: EntryFlags,
         invplg: InvalidateTlb,
         zero: ZeroPage,
-    ) {
+    ) -> Result<(), OutOfMemory> {
         assert!(page.size.is_some(), "Page needs size!");
         let order = if page.size.unwrap() == PageSize::Kib4 {
             0
@@ -177,10 +190,8 @@ impl Mapper {
             9
         };
 
-        let frame = PHYSICAL_ALLOCATOR
-            .allocate(order)
-            .expect("Out of physical memory!");
-        self.map_to(page, frame.start_address(), flags, invplg);
+        let frame = PHYSICAL_ALLOCATOR.allocate(order).ok_or(OutOfMemory)?;
+        self.map_to(page, frame.start_address(), flags, invplg)?;
 
         // Zero the page
         if zero == ZeroPage::Zero {
@@ -190,6 +201,8 @@ impl Mapper {
                 page.size.unwrap().bytes() as usize,
             );
         }
+
+        Ok(())
     }
 
     /// Maps a range of pages, allocating physical memory for them
@@ -199,7 +212,7 @@ impl Mapper {
         flags: EntryFlags,
         invplg: InvalidateTlb,
         zero: ZeroPage,
-    ) {
+    ) -> Result<(), OutOfMemory> {
         assert!(
             pages.start().page_size() == Some(PageSize::Kib4)
                 && pages.end().page_size() == Some(PageSize::Kib4),
@@ -208,8 +221,10 @@ impl Mapper {
 
         for no in pages.start().number()..=pages.end().number() {
             let page = Page::containing_address(no as u64 * 0x1000);
-            self.map(page, flags, invplg, zero);
+            self.map(page, flags, invplg, zero)?;
         }
+
+        Ok(())
     }
 
     /// Tries to map a range of pages for a user.
@@ -263,7 +278,7 @@ impl Mapper {
                 return Err(TryMapError::AlreadyMapped(page));
             }
 
-            self.map(page, flags, invplg, zero);
+            self.map(page, flags, invplg, zero)?;
         }
 
         Ok(())
@@ -282,6 +297,7 @@ impl Mapper {
                 .walk_page_table(page)
                 .expect("Virtual address is not mapped!");
             self.map_to(page, paddr.0.physical_address().unwrap(), flags, invplg)
+                .unwrap()
         }
     }
 
@@ -334,6 +350,17 @@ impl Mapper {
         }
     }
 
+    pub unsafe fn unmap_range(
+        &mut self,
+        pages: RangeInclusive<Page>,
+        free_physmem: FreeMemory,
+        invplg: InvalidateTlb,
+    ) {
+        for page in pages {
+            self.unmap(page, free_physmem, invplg);
+        }
+    }
+
     /// Identity maps a range of addresses as 4 kib pages
     pub unsafe fn id_map_range(
         &mut self,
@@ -348,7 +375,8 @@ impl Mapper {
                 PhysAddr::new(addr as u64),
                 flags,
                 invplg,
-            );
+            )
+            .expect("Out of physical memory for page tables");
         }
     }
 
@@ -369,7 +397,8 @@ impl Mapper {
                 PhysAddr::new(address - crate::memory::KERNEL_MAPPING_BEGIN),
                 flags,
                 invplg,
-            );
+            )
+            .expect("Out of physical memory for page tables");
         }
     }
 
@@ -378,7 +407,7 @@ impl Mapper {
         mapping: PageRangeMapping,
         invplg: InvalidateTlb,
         flags: EntryFlags,
-    ) {
+    ) -> Result<(), OutOfMemory> {
         let frames =
             mapping.start_frame..=mapping.start_frame + mapping.pages.size_hint().1.unwrap() as u64;
 
@@ -386,13 +415,15 @@ impl Mapper {
             let phys_address = frame_no * 4096;
             let virtual_address = page_no * 4096;
 
-            self.map_to(
+            let res = self.map_to(
                 Page::containing_address(virtual_address),
                 PhysAddr::new(phys_address as u64),
                 flags,
                 invplg,
-            );
+            )?;
         }
+
+        Ok(())
     }
 }
 
@@ -466,12 +497,14 @@ impl TemporaryPage {
             page_addr,
         );
 
-        active_table.map_to(
-            self.page,
-            frame,
-            EntryFlags::WRITABLE,
-            InvalidateTlb::Invalidate,
-        );
+        active_table
+            .map_to(
+                self.page,
+                frame,
+                EntryFlags::WRITABLE,
+                InvalidateTlb::Invalidate,
+            )
+            .expect("Out of physical memory");
         VirtAddr::new(
             self.page
                 .start_address()
@@ -497,12 +530,15 @@ impl Drop for TemporaryPage {
     fn drop(&mut self) {
         // Remap heap page so it can be deallocated correctly
         unsafe {
-            ACTIVE_PAGE_TABLES.lock().map_to(
-                self.page,
-                self.frame_addr,
-                EntryFlags::from_bits_truncate(0),
-                InvalidateTlb::Invalidate,
-            );
+            ACTIVE_PAGE_TABLES
+                .lock()
+                .map_to(
+                    self.page,
+                    self.frame_addr,
+                    EntryFlags::from_bits_truncate(0),
+                    InvalidateTlb::Invalidate,
+                )
+                .expect("Out of physical memory");
         }
 
         let layout = Layout::from_size_align(0x1000, 0x1000).unwrap();
@@ -545,7 +581,7 @@ impl ActivePageMap {
                 EntryFlags::PRESENT
                     | EntryFlags::WRITABLE
                     | EntryFlags::NO_EXECUTE
-                    | EntryFlags::GLOBAL
+                    | EntryFlags::GLOBAL,
             );
 
             tlb::flush_all();
@@ -559,7 +595,7 @@ impl ActivePageMap {
                 EntryFlags::PRESENT
                     | EntryFlags::WRITABLE
                     | EntryFlags::NO_EXECUTE
-                    | EntryFlags::GLOBAL
+                    | EntryFlags::GLOBAL,
             );
 
             tlb::flush_all();
@@ -596,7 +632,9 @@ impl ActivePageMap {
                 let phys_addr = frames[page_no as usize - *pages.start() as usize];
 
                 unsafe {
-                    mapper.map_to(page, phys_addr, flags, InvalidateTlb::NoInvalidate);
+                    mapper
+                        .map_to(page, phys_addr, flags, InvalidateTlb::NoInvalidate)
+                        .expect("Out of physical memory");
                 }
             }
         });

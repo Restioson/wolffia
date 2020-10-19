@@ -187,13 +187,13 @@ impl Process {
         new_table
     }
 
-    pub fn run_by_pid(pid: &ProcessId) -> ! {
+    pub fn run_by_pid(pid: &ProcessId) -> Result<!, OutOfMemory> {
         let mut this = PROCESSES.get_mut(pid).unwrap();
         ACTIVE_PAGE_TABLES.lock().switch(this.page_tables.clone());
 
         if this.new {
             unsafe {
-                this.setup();
+                this.setup()?;
             }
             this.new = false;
         }
@@ -215,7 +215,7 @@ impl Process {
     /// # Safety
     ///
     /// The page tables must have been switched to the process's AND the processor must be in ring0.
-    unsafe fn setup(&mut self) {
+    unsafe fn setup(&mut self) -> Result<(), OutOfMemory> {
         // Set up user stack
         let stack_top = Page::containing_address(STACK_TOP.as_u64());
         let stack_bottom = Page::containing_address(STACK_BOTTOM.as_u64());
@@ -225,7 +225,7 @@ impl Process {
             EntryFlags::WRITABLE | EntryFlags::USER_ACCESSIBLE | EntryFlags::NO_EXECUTE,
             InvalidateTlb::NoInvalidate,
             ZeroPage::Zero,
-        );
+        )
     }
 }
 

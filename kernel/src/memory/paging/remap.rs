@@ -63,13 +63,15 @@ pub fn remap_kernel(boot_info: &BootInformation, heap_tree_start_virt: u64) {
 
         unsafe {
             // Map VGA buffer
-            mapper.map_to(
-                Page::containing_address(crate::vga::VIRTUAL_VGA_PTR),
-                PhysAddr::new(0xb8000),
-                // TODO(permissions): map to specific process
-                EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::USER_ACCESSIBLE,
-                InvalidateTlb::NoInvalidate,
-            );
+            mapper
+                .map_to(
+                    Page::containing_address(crate::vga::VIRTUAL_VGA_PTR),
+                    PhysAddr::new(0xb8000),
+                    // TODO(permissions): map to specific process
+                    EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE | EntryFlags::USER_ACCESSIBLE,
+                    InvalidateTlb::NoInvalidate,
+                )
+                .expect("Out of physical memory");
         }
     });
 

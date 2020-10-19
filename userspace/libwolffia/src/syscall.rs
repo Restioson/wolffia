@@ -2,19 +2,34 @@
 #[repr(u64)]
 pub enum Syscall {
     Halt = 0,
-    Deadbeef = 1,
-    Print = 2,
+    Map = 1,
+    Unmap = 2,
+    Print = 3,
 }
 
 pub enum SyscallError {
     InvalidBuffer,
+    InvalidUtf8,
+    InvalidPage,
+    InvalidPagesLength,
+    OutOfMemory,
     UnknownError(i64),
+}
+
+bitflags::bitflags! {
+     pub struct UserPageFlags: u64 {
+        const WRITABLE = 1;
+        const EXECUTABLE = 1 << 1;
+     }
 }
 
 pub fn res_from_code(code: i64) -> Result<i64, SyscallError> {
     match code {
         x if x >= 0 => Ok(x),
         -1 => Err(SyscallError::InvalidBuffer),
+        -2 => Err(SyscallError::InvalidUtf8),
+        -3 => Err(SyscallError::InvalidPagesLength),
+        -4 => Err(SyscallError::OutOfMemory),
         unknown => Err(SyscallError::UnknownError(unknown)),
     }
 }
@@ -69,8 +84,4 @@ pub fn print(string: &str) -> Result<(), SyscallError> {
 pub fn halt() -> ! {
     let _ = raw::syscall_0(Syscall::Halt);
     unreachable!()
-}
-
-pub fn dead_beef() -> Result<i64, SyscallError> {
-    raw::syscall_0(Syscall::Deadbeef)
 }
